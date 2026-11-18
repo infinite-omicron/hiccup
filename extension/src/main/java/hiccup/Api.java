@@ -23,13 +23,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
 
 import java.io.IOException;
-import java.io.OutputStream;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -39,8 +34,6 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /** The REST API. Every handler is a thin wrapper over one Montoya call; logic lives in the hiccup CLI. */
 public class Api {
@@ -52,8 +45,7 @@ public class Api {
     private final byte[] auth;
     private final Browser browser;
     private final Throttle throttle;
-    private HttpServer server;
-    private ExecutorService pool;
+    private MiniHttpServer server;
     private int port;
 
     /** Thrown by handlers to produce a non-200 JSON error. */
@@ -75,28 +67,20 @@ public class Api {
 
     public void start(int port) throws IOException {
         this.port = port;
-        server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), port), 0);
-        pool = Executors.newCachedThreadPool(r -> {
-            Thread t = new Thread(r, "hiccup-api");
-            t.setDaemon(true);
-            return t;
-        });
-        server.setExecutor(pool);
-        server.createContext("/", this::handle);
-        server.start();
+        server = new MiniHttpServer(this::handle);
+        server.start(port);
     }
 
     public void stop() {
-        if (server != null) server.stop(0);
-        if (pool != null) pool.shutdownNow();
+        if (server != null) server.stop();
     }
 
-    private void handle(HttpExchange ex) throws IOException {
+    private MiniHttpServer.Response handle(MiniHttpServer.Request req) {
         int status = 200;
         Object out;
         try {
-            guard(ex);
-            out = route(ex.getRequestMethod(), ex.getRequestURI().getPath(), query(ex.getRequestURI()), body(ex));
+            guard(req);
+            out = route(req.method(), req.uri().getPath(), query(req.uri()), body(req));
         } catch (HttpError e) {
             status = e.status;
             out = Map.of("error", e.getMessage());
@@ -108,24 +92,19 @@ public class Api {
         } catch (Exception e) {
             status = 500;
             out = Map.of("error", String.valueOf(e));
-            api.logging().logToError("hiccup: " + ex.getRequestMethod() + " " + ex.getRequestURI() + ": " + e);
+            api.logging().logToError("hiccup: " + req.method() + " " + req.uri() + ": " + e);
         }
-        byte[] bytes = GSON.toJson(out).getBytes(StandardCharsets.UTF_8);
-        ex.getResponseHeaders().set("Content-Type", "application/json");
-        ex.sendResponseHeaders(status, bytes.length);
-        try (OutputStream os = ex.getResponseBody()) {
-            os.write(bytes);
-        }
+        return new MiniHttpServer.Response(status, "application/json", GSON.toJson(out).getBytes(StandardCharsets.UTF_8));
     }
 
     /** Bearer token, no browser-originated requests (CSRF), and a loopback Host header (DNS rebinding). */
-    private void guard(HttpExchange ex) {
-        if (ex.getRequestHeaders().containsKey("Origin")) throw new HttpError(403, "browser requests are not allowed");
-        String host = ex.getRequestHeaders().getFirst("Host");
+    private void guard(MiniHttpServer.Request req) {
+        if (req.header("Origin") != null) throw new HttpError(403, "browser requests are not allowed");
+        String host = req.header("Host");
         if (host == null || !(host.equals("127.0.0.1:" + port) || host.equals("localhost:" + port))) {
             throw new HttpError(403, "bad Host header");
         }
-        String got = ex.getRequestHeaders().getFirst("Authorization");
+        String got = req.header("Authorization");
         if (got == null || !MessageDigest.isEqual(auth, got.getBytes(StandardCharsets.UTF_8))) {
             throw new HttpError(401, "missing or bad bearer token");
         }
@@ -541,8 +520,8 @@ public class Api {
 
     // ---- small JSON / query helpers ----
 
-    private static JsonElement body(HttpExchange ex) throws IOException {
-        byte[] b = ex.getRequestBody().readAllBytes();
+    private static JsonElement body(MiniHttpServer.Request req) {
+        byte[] b = req.body();
         return b.length == 0 ? new JsonObject() : JsonParser.parseString(new String(b, StandardCharsets.UTF_8));
     }
 
