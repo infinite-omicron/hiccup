@@ -216,6 +216,8 @@ public class Api {
         m.put("version", v.toString());
         m.put("edition", v.edition().name());
         m.put("extension", "hiccup");
+        String ev = Api.class.getPackage().getImplementationVersion();
+        m.put("extension_version", ev == null ? "dev" : ev);
         m.put("proxy", browser.proxyListener());
         m.put("intercept", api.proxy().isInterceptEnabled());
         return m;
