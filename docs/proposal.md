@@ -66,7 +66,7 @@ Makefile                          # jar + 6 cross-compiled binaries → dist/
 ## `~/.hiccup/config.json`
 ```json
 {
-  "backend": "burp",
+  "proxy": "burp",
   "burp": { "url": "http://127.0.0.1:8099", "token": "…", "jar": "~/.hiccup/hiccup-burp.jar",
             "bapps": ["Autorize", "JWT Editor", "Logger++"] },
   "sites": {
@@ -93,7 +93,7 @@ Makefile                          # jar + 6 cross-compiled binaries → dist/
 }
 ```
 - **Secrets**: plaintext is the default. A value can also be `env:VAR` or `keychain:service/account`. Use `hiccup creds set acme user2` to store a password in the OS keychain.
-- **Environment variables** (all `HICCUP_`-prefixed): `HICCUP_CONFIG`, `HICCUP_BACKEND`, `HICCUP_BURP_URL`, `HICCUP_BURP_TOKEN`, `HICCUP_SITE`, `HICCUP_USER_AGENT`, `HICCUP_THROTTLE_RPS`.
+- **Environment variables** (all `HICCUP_`-prefixed): `HICCUP_CONFIG`, `HICCUP_PROXY`, `HICCUP_BURP_URL`, `HICCUP_BURP_TOKEN`, `HICCUP_SITE`, `HICCUP_USER_AGENT`, `HICCUP_THROTTLE_RPS`.
 - The config file is written with mode 0600.
 
 ## CLI (JSON on stdout by default, `--format table` for people)

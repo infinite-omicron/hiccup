@@ -34,9 +34,9 @@ func mitmRuntime() (string, string, error) {
 func (a *app) mitmCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mitm",
-		Short: "Run mitmproxy with the hiccup addon (backend \"mitmproxy\")",
+		Short: "Run mitmproxy with the hiccup addon (proxy \"mitmproxy\")",
 		Long: "Starts mitmdump with hiccup's addon, which serves the same REST API as the Burp extension.\n" +
-			"Select it with \"backend\": \"mitmproxy\" in config or HICCUP_BACKEND=mitmproxy.",
+			"Select it with \"proxy\": \"mitmproxy\" in config or HICCUP_PROXY=mitmproxy.",
 	}
 	var wait time.Duration
 	start := &cobra.Command{

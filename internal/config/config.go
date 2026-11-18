@@ -15,22 +15,22 @@ import (
 )
 
 type Config struct {
-	Backend string           `json:"backend,omitempty"`
-	Burp    Burp             `json:"burp"`
-	Zap     *Zap             `json:"zap,omitempty"`
-	Mitm    *Mitm            `json:"mitm,omitempty"`
-	Matrix  *Matrix          `json:"matrix,omitempty"`
-	Sites   map[string]*Site `json:"sites,omitempty"`
+	Proxy  string           `json:"proxy,omitempty"` // burp, zap or mitmproxy
+	Burp   Burp             `json:"burp"`
+	Zap    *Zap             `json:"zap,omitempty"`
+	Mitm   *Mitm            `json:"mitm,omitempty"`
+	Matrix *Matrix          `json:"matrix,omitempty"`
+	Sites  map[string]*Site `json:"sites,omitempty"`
 }
 
-// Zap locates a running ZAP (backend "zap").
+// Zap locates a running ZAP (proxy "zap").
 type Zap struct {
 	URL    string `json:"url,omitempty"`     // API, default http://127.0.0.1:8090
 	APIKey string `json:"api_key,omitempty"` // plaintext, env:VAR or keychain:service/account
 	Proxy  string `json:"proxy,omitempty"`   // proxy listener, default the API's host:port
 }
 
-// Mitm configures mitmproxy started by `hiccup mitm start` (backend "mitmproxy").
+// Mitm configures mitmproxy started by `hiccup mitm start` (proxy "mitmproxy").
 type Mitm struct {
 	Proxy   string   `json:"proxy,omitempty"`    // listen address, default 127.0.0.1:8082
 	APIPort int      `json:"api_port,omitempty"` // hiccup addon API port, default 8097
@@ -175,7 +175,7 @@ func RuntimePath() string { return filepath.Join(Home(), "burp.json") }
 
 // Load reads the config file; a missing file is an empty config. Environment
 // overrides and the extension's runtime file are applied by the accessors
-// (BackendName, BurpEndpoint, Site.EffectiveThrottle, Site.EffectiveUserAgent)
+// (ProxyName, BurpEndpoint, Site.EffectiveThrottle, Site.EffectiveUserAgent)
 // so that Save never persists them.
 func Load() (*Config, error) {
 	c := &Config{}
@@ -195,13 +195,13 @@ func Load() (*Config, error) {
 	return c, nil
 }
 
-// BackendName is $HICCUP_BACKEND, the config's backend, or "burp".
-func (c *Config) BackendName() string {
-	if v := os.Getenv("HICCUP_BACKEND"); v != "" {
+// ProxyName is $HICCUP_PROXY, the config's proxy, or "burp".
+func (c *Config) ProxyName() string {
+	if v := os.Getenv("HICCUP_PROXY"); v != "" {
 		return v
 	}
-	if c.Backend != "" {
-		return c.Backend
+	if c.Proxy != "" {
+		return c.Proxy
 	}
 	return "burp"
 }
@@ -370,8 +370,8 @@ func (s *Site) FindAccount(name string) (role string, r *Role, a *Account, ok bo
 // Example is written by `hiccup config init`.
 func Example() *Config {
 	return &Config{
-		Backend: "burp",
-		Burp:    Burp{URL: "http://127.0.0.1:8099", BApps: []string{}},
+		Proxy: "burp",
+		Burp:  Burp{URL: "http://127.0.0.1:8099", BApps: []string{}},
 		Sites: map[string]*Site{
 			"example": {
 				BaseURL: "https://app.example.test",

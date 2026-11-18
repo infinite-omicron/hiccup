@@ -10,7 +10,7 @@ Output is JSON by default, so agents can parse it; add `--format table` for a hu
 - Phase 1: the extension, the core CLI, the browser, throttling and the Nuclei import.
 - Phase 2: login recipes, per-account sessions and the auth matrix.
 - Phase 3: installing BApp Store extensions and the Google Sheets export.
-- Phase 4: ZAP and mitmproxy backends.
+- Phase 4: ZAP and mitmproxy support.
 
 ## Build
 
@@ -180,14 +180,14 @@ How it works:
 
 `testdata/authapp/app.py` is a small multi-role app with one bug of each kind. hiccup reports exactly those bugs against it, and no false positives on the routes that are properly protected.
 
-## Other backends: ZAP and mitmproxy
+## Other proxies: ZAP and mitmproxy
 
-Pick a backend with `"backend"` in config or `HICCUP_BACKEND` (`burp`, `zap` or `mitmproxy`). The same commands work on all three, except where a tool has no equivalent.
+Pick the proxy with `"proxy"` in config or `HICCUP_PROXY` (`burp`, `zap` or `mitmproxy`). The same commands work on all three, except where a tool has no equivalent.
 
 **mitmproxy**: `hiccup mitm start` runs `mitmdump` with hiccup's addon (embedded in the binary). The addon serves the same REST API as the Burp extension, with the same token, `Host` and `Origin` protections. It keeps proxy history in memory and enforces throttling (including jitter and 429/503 backoff) and the User-Agent rewrite in its request hook.
 
 ```json
-"backend": "mitmproxy",
+"proxy": "mitmproxy",
 "mitm": {"proxy": "127.0.0.1:8082", "api_port": 8097}
 ```
 
@@ -200,7 +200,7 @@ hiccup mitm stop
 **ZAP**: start ZAP with its API enabled (for example `zap.sh -daemon -port 8090 -config api.key=…`), then:
 
 ```json
-"backend": "zap",
+"proxy": "zap",
 "zap": {"url": "http://127.0.0.1:8090", "api_key": "keychain:hiccup/zap"}
 ```
 
@@ -216,7 +216,7 @@ hiccup mitm stop
 | intercept | ✓ | break | — (mitmdump has none) |
 | Repeater, Intruder, extensions, BApps | ✓ | — | — |
 
-Unsupported operations exit with code 3. The auth matrix, logins, the Nuclei import and the exports work on every backend. The mitmproxy backend was tested end-to-end against `testdata/authapp`, with the same findings as Burp. The ZAP backend is built from ZAP 2.17's API definitions and tested against a mock of that API.
+Unsupported operations exit with code 3. The auth matrix, logins, the Nuclei import and the exports work with every proxy. mitmproxy support was tested end-to-end against `testdata/authapp`, with the same findings as Burp. ZAP support is built from ZAP 2.17's API definitions and tested against a mock of that API.
 
 ## Config: `~/.hiccup/config.json`
 
@@ -233,9 +233,9 @@ Unsupported operations exit with code 3. The auth matrix, logins, the Nuclei imp
 | `HICCUP_HOME` | state directory (default `~/.hiccup`) |
 | `HICCUP_CONFIG` | config file (default `$HICCUP_HOME/config.json`) |
 | `HICCUP_SITE` | default site |
-| `HICCUP_BACKEND` | `burp`, `zap` or `mitmproxy` |
+| `HICCUP_PROXY` | `burp`, `zap` or `mitmproxy` |
 | `HICCUP_ZAP_URL`, `HICCUP_ZAP_API_KEY` | ZAP API endpoint and key (plaintext, `env:` or `keychain:`) |
-| `HICCUP_BROWSER` | Chrome-family browser for the ZAP and mitmproxy backends |
+| `HICCUP_BROWSER` | Chrome-family browser when the proxy is ZAP or mitmproxy |
 | `HICCUP_BURP_URL`, `HICCUP_BURP_TOKEN` | override the extension endpoint |
 | `HICCUP_BURP_PORT` | port the extension listens on (read by Burp's process) |
 | `HICCUP_USER_AGENT`, `HICCUP_THROTTLE_RPS` | per-run overrides; never written to config |

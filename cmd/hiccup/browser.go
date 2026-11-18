@@ -15,7 +15,7 @@ import (
 func (a *app) statusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Check the backend connection and push site throttles/User-Agent",
+		Short: "Check the proxy connection and push site throttles/User-Agent",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			b, err := a.be()
@@ -34,7 +34,7 @@ func (a *app) statusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return a.print(map[string]any{"backend": a.cfg.BackendName(), "health": h, "browser": br, "applied": applied})
+			return a.print(map[string]any{"proxy": a.cfg.ProxyName(), "health": h, "browser": br, "applied": applied})
 		},
 	}
 }

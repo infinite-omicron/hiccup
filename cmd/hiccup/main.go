@@ -96,7 +96,7 @@ func (a *app) be() (backend.Backend, error) {
 	if a.backend != nil {
 		return a.backend, nil
 	}
-	switch name := a.cfg.BackendName(); name {
+	switch name := a.cfg.ProxyName(); name {
 	case "burp":
 		url, token := a.cfg.BurpEndpoint()
 		if a.burpURL != "" {
@@ -123,7 +123,7 @@ func (a *app) be() (backend.Backend, error) {
 		}
 		a.backend = mitm.New(u, token, a.cfg.MitmSettings().Proxy)
 	default:
-		return nil, fmt.Errorf("unknown backend %q (burp, zap or mitmproxy)", name)
+		return nil, fmt.Errorf("unknown proxy %q (burp, zap or mitmproxy)", name)
 	}
 	return a.backend, nil
 }

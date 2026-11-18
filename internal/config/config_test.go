@@ -25,7 +25,7 @@ func TestLoadLayers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if url, token := c.BurpEndpoint(); c.BackendName() != "burp" || url != "http://127.0.0.1:8099" || token != "fresh" {
+	if url, token := c.BurpEndpoint(); c.ProxyName() != "burp" || url != "http://127.0.0.1:8099" || token != "fresh" {
 		t.Errorf("runtime file should win: %s %s", url, token)
 	}
 	name, s, err := c.Site("")
