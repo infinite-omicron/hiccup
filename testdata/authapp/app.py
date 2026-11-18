@@ -8,7 +8,14 @@ Known bugs:
   - /documents/<id>   any logged-in user can read any document (horizontal)
   - /admin/users      any logged-in user can list users (vertical)
   - /api/export       no authentication at all (forceful browsing)
-Correctly protected: /admin (admin only), /documents (logged in), /dashboard.
+Correctly protected: /admin and its cache pages (admin only); /documents and
+its tabs, /content/scheduled, /help/about and /dashboard (logged in).
+
+The nav nests submenus (hidden until hover, as real admin menus are), uses an
+ARIA menu button, and the Documents page has tabs, so `hiccup matrix map`
+should report paths like "Content -> Scheduled content",
+"Admin -> Flush all caches -> Flush CSS and JavaScript", "Help -> About" and,
+at depth 2, "Content -> Documents -> Shared".
 """
 import html
 import http.server
@@ -30,12 +37,27 @@ def page(title, body, user=None):
     nav = ""
     if user:
         own = next(i for i, (o, _) in DOCS.items() if o == user["name"])
-        links = [("/dashboard", "Dashboard"), ("/documents", "Documents"), (f"/documents/{own}", "My Document"),
-                 ("/api/export", "Export")]
+        admin = ""
         if user["role"] == "admin":
-            links += [("/admin", "Admin"), ("/admin/users", "Users")]
-        links.append(("/logout", "Log out"))
-        nav = "<nav>" + " ".join(f'<a href="{h}">{t}</a>' for h, t in links) + "</nav>"
+            admin = ('<li><a href="/admin">Admin</a><ul class="sub">'
+                     '<li><a href="/admin/users">Users</a></li>'
+                     '<li><a href="/admin/flush">Flush all caches</a><ul class="sub">'
+                     '<li><a href="/admin/flush/css-js">Flush CSS and JavaScript</a></li></ul></li>'
+                     '</ul></li>')
+        nav = ('<style>.sub{display:none} li:hover>.sub{display:block} #help-menu[hidden]{display:none}</style>'
+               '<nav><ul>'
+               '<li><a href="/dashboard">Dashboard</a></li>'
+               '<li><span>Content</span><ul class="sub">'
+               '<li><a href="/documents">Documents</a></li>'
+               f'<li><a href="/documents/{own}">My Document</a></li>'
+               '<li><a href="/content/scheduled">Scheduled content</a></li></ul></li>'
+               '<li><a href="/api/export">Export</a></li>'
+               + admin +
+               '<li><a href="/logout">Log out</a></li>'
+               '</ul>'
+               '<button aria-controls="help-menu" aria-haspopup="true">Help</button>'
+               '<div id="help-menu" role="menu" hidden><a role="menuitem" href="/help/about">About</a></div>'
+               '</nav>')
     return f"<!doctype html><html><head><title>{html.escape(title)}</title></head><body>{nav}<h1>{html.escape(title)}</h1>{body}</body></html>"
 
 
@@ -77,8 +99,15 @@ class App(http.server.BaseHTTPRequestHandler):
         if path == "/dashboard":
             return self.send(200, page("Dashboard", f"<p>Welcome {u['name']} ({u['role']})</p>", u))
         if path == "/documents":
+            tabs = '<div role="tablist"><a href="/documents">Mine</a> <a href="/documents/shared">Shared</a></div>'
             mine = [f'<li><a href="/documents/{i}">{t}</a></li>' for i, (o, t) in DOCS.items() if o == u["name"]]
-            return self.send(200, page("Documents", "<ul>" + "".join(mine) + "</ul>", u))
+            return self.send(200, page("Documents", tabs + "<ul>" + "".join(mine) + "</ul>", u))
+        if path == "/documents/shared":
+            return self.send(200, page("Shared documents", "<p>nothing shared yet</p>", u))
+        if path == "/content/scheduled":
+            return self.send(200, page("Scheduled content", "<p>no scheduled content</p>", u))
+        if path == "/help/about":
+            return self.send(200, page("About", "<p>authapp test server</p>", u))
         if path.startswith("/documents/"):
             try:
                 owner, text = DOCS[int(path.rsplit("/", 1)[1])]
@@ -86,10 +115,11 @@ class App(http.server.BaseHTTPRequestHandler):
                 return self.send(404, page("Not found", ""))
             # BUG: no ownership check
             return self.send(200, page("Document", f"<p>{html.escape(text)}</p><p>owner: {owner}</p>", u))
-        if path == "/admin":
+        if path in ("/admin", "/admin/flush", "/admin/flush/css-js"):
             if u["role"] != "admin":
                 return self.send(403, page("Forbidden", "<p>admins only</p>", u))
-            return self.send(200, page("Admin", "<p>admin console</p>", u))
+            title = {"/admin": "Admin", "/admin/flush": "Caches flushed", "/admin/flush/css-js": "CSS and JavaScript flushed"}[path]
+            return self.send(200, page(title, "<p>admin console</p>", u))
         if path == "/admin/users":  # BUG: missing role check
             rows = "".join(f"<li>{v['name']} ({v['role']})</li>" for v in USERS.values())
             return self.send(200, page("Users", f"<ul>{rows}</ul>", u))
