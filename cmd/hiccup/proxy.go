@@ -300,29 +300,34 @@ func (a *app) scanCmd() *cobra.Command {
 func (a *app) scopeCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "scope", Short: "Manage Burp target scope"}
 	add := &cobra.Command{
-		Use: "add [url...]", Short: "Include URLs in scope (default: the site's scope)",
+		Use: "add [host|url...]", Short: "Include hosts or URLs in scope (default: the site's scope); a bare host means https and http",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.scopeChange(cmd, args, false)
 		},
 	}
 	exclude := &cobra.Command{
-		Use: "exclude <url>...", Short: "Exclude URLs from scope", Args: cobra.MinimumNArgs(1),
+		Use: "exclude <host|url>...", Short: "Exclude hosts or URLs from scope", Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.scopeChange(cmd, args, true)
 		},
 	}
 	check := &cobra.Command{
-		Use: "check <url>", Short: "Is a URL in scope?", Args: cobra.ExactArgs(1),
+		Use: "check <host|url>", Short: "Is a URL in scope? (a bare host checks https)", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
-			in, err := b.InScope(cmd.Context(), args[0])
+			urls, err := scopeURLs(args)
 			if err != nil {
 				return err
 			}
-			return a.print(map[string]any{"url": args[0], "in_scope": in})
+			// A bare host checks its https URL.
+			in, err := b.InScope(cmd.Context(), urls[0])
+			if err != nil {
+				return err
+			}
+			return a.print(map[string]any{"url": urls[0], "in_scope": in})
 		},
 	}
 	cmd.AddCommand(add, exclude, check)
@@ -339,6 +344,10 @@ func (a *app) scopeChange(cmd *cobra.Command, urls []string, exclude bool) error
 		if len(urls) == 0 {
 			urls = []string{s.BaseURL}
 		}
+	}
+	urls, err := scopeURLs(urls)
+	if err != nil {
+		return err
 	}
 	b, err := a.proxyClient()
 	if err != nil {
