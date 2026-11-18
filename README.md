@@ -43,7 +43,8 @@ Prebuilt binaries and the jar are also attached to each [GitHub Release](https:/
   - `hiccup-burp_X.Y.Z.jar`
   - `checksums.txt`
 - **Rebuilding assets**: to redo them for an existing tag, run the Release workflow by hand with that tag.
-- **Homebrew**: the Release workflow then writes `Casks/hiccup.rb` in [infinite-omicron/homebrew-tap](https://github.com/infinite-omicron/homebrew-tap) for stable releases. It needs a `HOMEBREW_TAP_TOKEN` secret: a fine-grained token with *Contents: read and write* on that repo.
+- **Provenance**: every asset gets a signed build provenance attestation (`gh attestation verify <file> -R infinite-omicron/hiccup`) and is listed on the organization's [linked artifacts](https://github.com/orgs/infinite-omicron/artifacts) page.
+- **Homebrew**: the Release workflow then writes `Casks/hiccup.rb` in [infinite-omicron/homebrew-tap](https://github.com/infinite-omicron/homebrew-tap) for stable releases. It needs a `HOMEBREW_TAP_DEPLOY_KEY` secret: the private half of a deploy key with write access on that repo (or a `HOMEBREW_TAP_TOKEN` fine-grained token with *Contents: read and write*).
 - **Locally**, `make release VERSION=v1.2.3` produces the same assets in `dist/release/`.
 
 ## Start Burp with hiccup loaded
