@@ -5,7 +5,12 @@ Drive Burp Suite from scripts and agents (Claude Code, agy, shell).
 - **`hiccup-burp.jar`**: a small Burp extension (Montoya API). It exposes Burp through a token-protected REST API on `127.0.0.1:8099` and contains no logic of its own.
 - **`hiccup`**: a single Go binary for macOS, Linux and Windows. It holds all the logic: config, credentials, browser automation over CDP, per-host throttling and User-Agent control, and importers such as Nuclei.
 
-Output is JSON by default, so agents can parse it; add `--format table` for a human-readable table. See [docs/proposal.md](docs/proposal.md) for the full design. Phase 1 (this code) covers the extension, the core CLI, the browser, throttling and the Nuclei import. The auth matrix, login recipes and the ZAP/mitmproxy backends come later.
+Output is JSON by default, so agents can parse it; add `--format table` for a human-readable table. See [docs/proposal.md](docs/proposal.md) for the full design. Done so far:
+
+- Phase 1: the extension, the core CLI, the browser, throttling and the Nuclei import.
+- Phase 2: login recipes, per-account sessions and the auth matrix.
+
+Still to come: BApp installs and Google Sheets export (phase 3), then the ZAP and mitmproxy backends.
 
 ## Build
 
@@ -95,6 +100,60 @@ hiccup import nuclei results.jsonl --dry-run
 ```
 
 Nuclei severities map to Burp's as follows: critical and high become High, medium becomes Medium, low becomes Low, info becomes Information. Each request/response is attached as evidence. **Burp Community silently discards issues that extensions add**, so issue import needs Burp Professional. On Community, hiccup reports exit code 3 instead of pretending the import succeeded.
+
+## Logins and sessions
+
+Each site lists its roles (with a privilege `level`) and accounts. An account without a `username` is anonymous. The `login` recipe fills a form:
+
+```json
+"login": {"url": "/login", "username": "#email", "password": "#password",
+          "submit": "button[type=submit]", "success": {"url_contains": "/dashboard"}},
+"session": {"cookies": ["session"], "headers": ["Authorization"]}
+```
+
+```sh
+hiccup login --all           # every account, each in a fresh browser context
+hiccup login user1 --manual  # you log in yourself in Burp's browser, then press Enter
+```
+
+hiccup saves each account's session cookies to `~/.hiccup/sessions/<site>/<account>.json`, along with any configured headers (such as an `Authorization` token, read from proxy history after login). If a recipe fails in a terminal, hiccup falls back to manual login.
+
+## Auth matrix (horizontal and vertical privilege escalation)
+
+```sh
+hiccup matrix record --as admin1          # log in, click every nav link; one action per link
+hiccup matrix record --as user1           # recording lower roles too improves the expectations
+hiccup login --all                        # fresh sessions for every account
+hiccup matrix run                         # replay every recorded request as every account
+hiccup matrix show --format table
+hiccup matrix export --xlsx matrix.xlsx --csv matrix.csv --burp-issues
+```
+
+For actions that the nav links don't cover, record by hand:
+
+```sh
+hiccup matrix record --as admin1 --manual   # logs in in the visible tab
+hiccup matrix mark "Create Document"        # requests from now on belong to this action
+hiccup matrix stop
+```
+
+How it works:
+
+- **Recording**: requests are grouped into actions, and object references in paths are turned into templates (`/documents/42` → `/documents/${document_id}`). Static files, out-of-scope hosts, login and logout are dropped.
+- **Replay**: each request is sent through Burp, and so throttled, once per account. hiccup removes `Cookie`, `Authorization` and the configured session headers, then injects that account's session. Only GET, HEAD and OPTIONS are replayed unless you pass `--unsafe`, because replaying POST, PUT or DELETE as other users changes data.
+- **Classification**:
+  - **Denied**: 401 or 403, a redirect to login, a 404 the owner doesn't get, or a login page.
+  - **Allowed**: a 2xx that looks like the owner's response.
+  - **Differs**: a 2xx that doesn't look like the owner's response; flagged as `review` for you to check.
+- **Expected access**:
+  - The recorder is always allowed.
+  - A reference to someone's object (`/documents/${document_id}`) is allowed only for accounts at a higher level.
+  - Any other request is allowed for accounts at the recorder's level or above, or for any account at or above the level of someone who recorded it themselves.
+  - You can override any of these in `~/.hiccup/sites/<site>/expectations.json`, e.g. `{"Reports": {"user": "allow"}, "*": {"auditor": "deny"}}`.
+- **Findings**: `vertical` when a lower level got access, `horizontal` when the same level reached another account's object (IDOR), and `forceful-browsing` when the anonymous account got access.
+- **xlsx export**: fills the *Auth Matrix* tab of your checklist template. One column pair (`Exp?` / `Actual`) per action, one row per account, and finding cells highlighted red (amber for `review`). The rest of the workbook is kept. Set `"matrix": {"template": "~/.hiccup/Checklist.xltx"}` in config, or pass `--template`.
+
+`testdata/authapp/app.py` is a small multi-role app with one bug of each kind. hiccup reports exactly those bugs against it, and no false positives on the routes that are properly protected.
 
 ## Config: `~/.hiccup/config.json`
 
