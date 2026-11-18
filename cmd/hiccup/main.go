@@ -77,6 +77,7 @@ func main() {
 		a.bappCmd(),
 		a.mitmCmd(),
 		a.googleCmd(),
+		a.m365Cmd(),
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
