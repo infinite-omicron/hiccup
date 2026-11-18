@@ -145,19 +145,19 @@ func Write(ctx context.Context, client *http.Client, spreadsheet, sheet string, 
 			"properties": map[string]any{"pixelSize": 340}, "fields": "pixelSize"}},
 	}
 	for _, r := range g.Body {
+		f := map[string]any{"wrapStrategy": "WRAP", "verticalAlignment": "TOP"}
+		switch g.Status[r] {
+		case authmatrix.RowMatch:
+			f["backgroundColor"], f["textFormat"] = rgb(authmatrix.MatchFill), map[string]any{"foregroundColor": rgb(authmatrix.MatchText)}
+		case authmatrix.RowMismatch:
+			f["backgroundColor"], f["textFormat"] = rgb(authmatrix.MismatchFill), map[string]any{"foregroundColor": rgb(authmatrix.MismatchText)}
+		}
 		reqs = append(reqs, map[string]any{"repeatCell": map[string]any{"range": rng(r, 0, r+1, cols),
-			"cell":   map[string]any{"userEnteredFormat": map[string]any{"wrapStrategy": "WRAP", "verticalAlignment": "TOP"}},
-			"fields": "userEnteredFormat(wrapStrategy,verticalAlignment)"}})
+			"cell":   map[string]any{"userEnteredFormat": f},
+			"fields": "userEnteredFormat(wrapStrategy,verticalAlignment,backgroundColor,textFormat.foregroundColor)"}})
 	}
 	for rc := range g.Headers {
 		reqs = append(reqs, format(rc[0], rc[1], map[string]any{"textFormat": map[string]any{"bold": true}}, "userEnteredFormat.textFormat.bold"))
-	}
-	for rc, mark := range g.Marks {
-		f := map[string]any{"backgroundColor": rgb("FFE699")}
-		if mark == authmatrix.MarkFinding {
-			f = map[string]any{"backgroundColor": rgb("F8CBAD"), "textFormat": map[string]any{"bold": true, "foregroundColor": rgb("9C0006")}}
-		}
-		reqs = append(reqs, format(rc[0], rc[1], f, "userEnteredFormat(backgroundColor,textFormat)"))
 	}
 	if err := a.call(ctx, "POST", ":batchUpdate", map[string]any{"requests": reqs}, nil); err != nil {
 		return "", err
