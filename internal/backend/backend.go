@@ -6,7 +6,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 )
+
+// ErrUnsupported is returned (wrapped) for features a backend doesn't have,
+// e.g. Repeater on mitmproxy. The CLI exits with code 3 for it.
+var ErrUnsupported = errors.New("not supported by this backend")
 
 type Backend interface {
 	Health(ctx context.Context) (map[string]any, error)

@@ -1,4 +1,5 @@
-// Package burp talks to the hiccup-burp extension's REST API.
+// Package burp talks to the hiccup REST API: the hiccup-burp extension, or the
+// hiccup mitmproxy addon, which serves the same API.
 package burp
 
 import (
@@ -35,7 +36,15 @@ type APIError struct {
 	Message string
 }
 
-func (e *APIError) Error() string { return fmt.Sprintf("burp: %d: %s", e.Status, e.Message) }
+func (e *APIError) Error() string { return fmt.Sprintf("%d: %s", e.Status, e.Message) }
+
+// Unwrap makes a 501 match backend.ErrUnsupported.
+func (e *APIError) Unwrap() error {
+	if e.Status == 501 {
+		return backend.ErrUnsupported
+	}
+	return nil
+}
 
 func (c *Client) do(ctx context.Context, method, path string, q url.Values, in, out any) error {
 	u := c.BaseURL + path
@@ -58,7 +67,7 @@ func (c *Client) do(ctx context.Context, method, path string, q url.Values, in, 
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return fmt.Errorf("cannot reach the hiccup Burp extension at %s (is Burp running with hiccup-burp.jar loaded?): %w", c.BaseURL, err)
+		return fmt.Errorf("cannot reach the hiccup API at %s (is Burp running with hiccup-burp.jar loaded, or `hiccup mitm start` running?): %w", c.BaseURL, err)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
