@@ -14,7 +14,7 @@ Output is JSON by default, so agents can parse it; add `--format table` for a hu
 
 ## Build
 
-Requires Go 1.27+, Gradle and a JDK 17+.
+Requires Go 1.27+ and a JDK 17+ (the Gradle wrapper fetches Gradle).
 
 ```sh
 make            # dist/hiccup-burp.jar and dist/hiccup
@@ -22,6 +22,22 @@ make dist       # also cross-compiles hiccup for darwin/linux/windows × amd64/a
 make install    # copies the jar to ~/.hiccup/ where `hiccup burp start` finds it
 make test
 ```
+
+Prebuilt binaries and the jar are attached to each [GitHub Release](https://github.com/infinite-omicron/hiccup/releases), with `checksums.txt` (SHA-256).
+
+## Releases and contributing
+
+- **Commits** follow [Conventional Commits](https://www.conventionalcommits.org): `<type>(<scope>): <description>`, with types such as `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci` and `chore`. CI rejects pushes and PRs whose commits don't match.
+- **Releases** follow [SemVer](https://semver.org) and are cut by [release-please](https://github.com/googleapis/release-please). It keeps a release PR open with the next version and `CHANGELOG.md`, computed from the commits:
+  - `fix` → patch
+  - `feat` → minor
+  - `!` or a `BREAKING CHANGE:` footer → major (minor while the version is still 0.x)
+- **Publishing**: merging the release PR tags `vX.Y.Z` and publishes the GitHub Release. The Release workflow then attaches:
+  - `hiccup_X.Y.Z_<os>_<arch>` archives for macOS, Linux and Windows (amd64 and arm64)
+  - `hiccup-burp_X.Y.Z.jar`
+  - `checksums.txt`
+- **Rebuilding assets**: to redo them for an existing tag, run the Release workflow by hand with that tag.
+- **Locally**, `make release VERSION=v1.2.3` produces the same assets in `dist/release/`.
 
 ## Start Burp with hiccup loaded
 
