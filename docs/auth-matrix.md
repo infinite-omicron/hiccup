@@ -94,6 +94,7 @@ If an owner is denied its own recorded requests, `matrix run` warns that its ses
 
 - **Excel (the default):** `hiccup matrix export` with no output flags writes `<site>-auth-matrix.xlsx` in the current directory and opens it in Microsoft Excel. Without Excel, it opens in your default app for `.xlsx` files, such as Numbers or LibreOffice.
   - **Opening:** only happens in an interactive terminal, never for scripts or agents. `--open` forces it and `--no-open` skips it. `--xlsx <file>` picks another file name.
+  - **Already open:** opening a document that's already open only brings its existing window forward, so the app would keep showing the old copy. If Excel or LibreOffice has the default workbook open, the export writes a timestamped copy instead (`<site>-auth-matrix-20261118-124546.xlsx`) and opens that. A file you name with `--xlsx` is overwritten as asked, with a note to reload it in the app.
   - **Layout:** the workbook fills the *Auth Matrix* tab of your checklist template in columns A–D, with one block per action stacked top to bottom:
 
     | | A | B | C | D |
