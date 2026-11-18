@@ -56,21 +56,23 @@ func (m *Matrix) WriteCSV(w io.Writer) error {
 	return cw.Error()
 }
 
-// Highlights for grid cells.
+// Row statuses: whether every replayed request in an account's row did what
+// was expected (allowed when expected to be allowed, denied when expected to be
+// denied). Rows where nothing was replayed have no status.
 const (
-	MarkFinding = "finding"
-	MarkReview  = "review"
+	RowMatch    = "match"
+	RowMismatch = "mismatch"
 )
 
 // Grid is the matrix laid out like the Checklist "Auth Matrix" tab, in
-// columns A–D with one block per action, stacked top to bottom:
+// columns A-D with one block per action, stacked top to bottom:
 //
 //	   A          B         C            D
 //	1             Action:   Home
 //	2                       Exp?         Actual
 //	3  Account
-//	4  admin1               allow: …     GET / → 200 allowed
-//	…  (one row per account), then a blank row and the next action's block.
+//	4  admin1               allow: ...     GET / -> 200 allowed
+//	...  (one row per account), then a blank row and the next action's block.
 //
 // Coordinates are 0-based [row, col].
 type Grid struct {
@@ -80,15 +82,22 @@ type Grid struct {
 	// ("Exp?"/"Actual") and "A3" ("Account").
 	Headers map[[2]int]string
 	// Body lists the account rows, whose Exp?/Actual cells wrap.
-	Body  []int
-	Marks map[[2]int]string // Actual cells with a finding or a review
+	Body []int
+	// Status colors account rows: RowMatch (green) or RowMismatch (yellow).
+	Status map[int]string
 }
 
-// GridCols is the number of columns the grid uses (A–D).
+// GridCols is the number of columns the grid uses (A-D).
 const GridCols = 4
 
+// Row colors (fill and text), as hex RGB: Excel's "Good" green and "Neutral" yellow.
+const (
+	MatchFill, MatchText       = "C6EFCE", "006100"
+	MismatchFill, MismatchText = "FFEB9C", "9C5700"
+)
+
 func (m *Matrix) Grid() *Grid {
-	g := &Grid{Headers: map[[2]int]string{}, Marks: map[[2]int]string{}}
+	g := &Grid{Headers: map[[2]int]string{}, Status: map[int]string{}}
 	row := func() int {
 		g.Rows = append(g.Rows, make([]string, GridCols))
 		return len(g.Rows) - 1
@@ -108,7 +117,7 @@ func (m *Matrix) Grid() *Grid {
 		g.Headers[[2]int{r, 0}] = "A3"
 		for _, a := range m.Accounts {
 			var exp, actual []string
-			worst := ""
+			matched, mismatched := false, false
 			for _, rr := range act.Requests {
 				for _, c := range rr.Cells {
 					if c.Account != a.Name {
@@ -124,12 +133,16 @@ func (m *Matrix) Grid() *Grid {
 						line = fmt.Sprintf("%d %s", c.Status, c.Verdict)
 					}
 					if c.Finding != "" {
-						line = strings.ToUpper(c.Finding) + " — " + line
-						if worst == "" || worst == MarkReview {
-							worst = c.Finding
-						}
+						line = strings.ToUpper(c.Finding) + " - " + line
 					}
-					actual = append(actual, req+" → "+line)
+					actual = append(actual, req+" -> "+line)
+					switch {
+					case c.Verdict == Skipped:
+					case (c.Expected == "allow" && c.Verdict == Allowed) || (c.Expected == "deny" && c.Verdict == Denied):
+						matched = true
+					default:
+						mismatched = true
+					}
 				}
 			}
 			r = row()
@@ -137,12 +150,11 @@ func (m *Matrix) Grid() *Grid {
 			g.Rows[r][0] = a.Name
 			g.Rows[r][2] = strings.Join(exp, "\n")
 			g.Rows[r][3] = strings.Join(actual, "\n")
-			switch worst {
-			case "":
-			case MarkReview:
-				g.Marks[[2]int{r, 3}] = MarkReview
-			default:
-				g.Marks[[2]int{r, 3}] = MarkFinding
+			switch {
+			case mismatched:
+				g.Status[r] = RowMismatch
+			case matched:
+				g.Status[r] = RowMatch
 			}
 		}
 	}
@@ -191,10 +203,12 @@ func (m *Matrix) WriteXLSX(path string, o XLSXOptions) error {
 	}
 	top := &excelize.Alignment{WrapText: true, Vertical: "top"}
 	wrap, _ := f.NewStyle(&excelize.Style{Alignment: top, Font: &excelize.Font{Family: family}})
-	red, _ := f.NewStyle(&excelize.Style{Alignment: top,
-		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"F8CBAD"}}, Font: &excelize.Font{Family: family, Bold: true, Color: "9C0006"}})
-	amber, _ := f.NewStyle(&excelize.Style{Alignment: top,
-		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FFE699"}}, Font: &excelize.Font{Family: family}})
+	// Excel's own "Good" and "Neutral" cell colors.
+	rowStyle := map[string]int{}
+	for status, c := range map[string][2]string{RowMatch: {MatchFill, MatchText}, RowMismatch: {MismatchFill, MismatchText}} {
+		rowStyle[status], _ = f.NewStyle(&excelize.Style{Alignment: top,
+			Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{c[0]}}, Font: &excelize.Font{Family: family, Color: c[1]}})
+	}
 
 	g := m.Grid()
 	name := func(r, c int) string { n, _ := excelize.CoordinatesToCellName(c+1, r+1); return n }
@@ -206,17 +220,14 @@ func (m *Matrix) WriteXLSX(path string, o XLSXOptions) error {
 		}
 	}
 	for _, r := range g.Body {
-		_ = f.SetCellStyle(sh, name(r, 0), name(r, GridCols-1), wrap)
+		style := wrap
+		if st, ok := rowStyle[g.Status[r]]; ok {
+			style = st
+		}
+		_ = f.SetCellStyle(sh, name(r, 0), name(r, GridCols-1), style)
 	}
 	for rc, tmpl := range g.Headers {
 		_ = f.SetCellStyle(sh, name(rc[0], rc[1]), name(rc[0], rc[1]), headerStyle[tmpl])
-	}
-	for rc, mark := range g.Marks {
-		style := red
-		if mark == MarkReview {
-			style = amber
-		}
-		_ = f.SetCellStyle(sh, name(rc[0], rc[1]), name(rc[0], rc[1]), style)
 	}
 	_ = f.SetColWidth(sh, "A", "A", 14)
 	_ = f.SetColWidth(sh, "B", "B", 10)

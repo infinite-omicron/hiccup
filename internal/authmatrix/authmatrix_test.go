@@ -249,8 +249,27 @@ func TestRunAndExport(t *testing.T) {
 			t.Errorf("%s = %q, want %q", c, got, want)
 		}
 	}
-	if d5 := cell("D5"); !strings.Contains(d5, "VERTICAL") || !strings.HasPrefix(cell("C5"), "deny: GET /admin/users") {
-		t.Errorf("user1 × Users: C5=%q D5=%q", cell("C5"), d5)
+	if d5 := cell("D5"); !strings.Contains(d5, "GET /admin/users -> VERTICAL - 200 allowed") || !strings.HasPrefix(cell("C5"), "deny: GET /admin/users") {
+		t.Errorf("user1 x Users: C5=%q D5=%q", cell("C5"), d5)
+	}
+	// Rows are green when Exp? and Actual agree, yellow when they don't.
+	fill := func(c string) string {
+		id, _ := x.GetCellStyle("Auth Matrix", c)
+		st, err := x.GetStyle(id)
+		if err != nil || len(st.Fill.Color) == 0 {
+			return ""
+		}
+		return strings.ToUpper(st.Fill.Color[0])
+	}
+	for c, want := range map[string]string{
+		"A4": MatchFill, "D4": MatchFill, // admin1 allowed, as expected
+		"A5": MismatchFill, "D5": MismatchFill, // user1 allowed, expected deny
+		"A7": MatchFill, // anon denied, as expected
+		"C1": "",        // headers aren't colored
+	} {
+		if got := fill(c); got != want {
+			t.Errorf("%s fill = %q, want %q", c, got, want)
+		}
 	}
 	if sheets := x.GetSheetList(); len(sheets) != 2 {
 		t.Errorf("other sheets of the template should be kept: %v", sheets)

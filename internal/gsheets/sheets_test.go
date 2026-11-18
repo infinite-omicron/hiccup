@@ -3,6 +3,7 @@ package gsheets
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -80,20 +81,24 @@ func TestWrite(t *testing.T) {
 			t.Errorf("row %v should span columns A-D", row)
 		}
 	}
-	var merged, red, bold int
+	var merged, green, yellow, bold int
 	for _, f := range formats {
 		if _, ok := f["mergeCells"]; ok {
 			merged++
 		}
 		b, _ := json.Marshal(f)
-		if strings.Contains(string(b), `"foregroundColor"`) {
-			red++
-		}
-		if strings.Contains(string(b), `"bold":true`) && !strings.Contains(string(b), `"foregroundColor"`) {
+		js := string(b)
+		switch {
+		case strings.Contains(js, fmt.Sprint(rgb(authmatrix.MatchFill)["green"])):
+			green++
+		case strings.Contains(js, fmt.Sprint(rgb(authmatrix.MismatchFill)["green"])):
+			yellow++
+		case strings.Contains(js, `"bold":true`):
 			bold++
 		}
 	}
-	if merged != 0 || red != 1 || bold != 5 {
-		t.Errorf("merged %d, red cells %d, bold headers %d", merged, red, bold)
+	// admin1 allowed as expected (green); user1 reached /admin/users, which it shouldn't (yellow).
+	if merged != 0 || green != 1 || yellow != 1 || bold != 5 {
+		t.Errorf("merged %d, green rows %d, yellow rows %d, bold headers %d", merged, green, yellow, bold)
 	}
 }
