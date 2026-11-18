@@ -50,6 +50,7 @@ hiccup scan audit https://target.test/                  # Burp Pro only (exit co
 hiccup issues list
 hiccup issues add --name "IDOR on /docs" --url https://target.test/docs/1 --severity high
 hiccup burp install-ext ./ext.jar                       # loads into the running Burp
+hiccup burp listeners                                   # proxy listeners; --add-site / --remove (hiccup's only)
 ```
 
 Scope takes hosts or URLs. A bare host (`target.test`, `target.test:8443`) adds both `https://` and `http://`; a URL keeps its scheme. Burp's scope API only takes URL prefixes, so wildcards like `*.target.test` are rejected: add each host instead.

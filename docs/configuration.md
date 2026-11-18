@@ -23,6 +23,7 @@ hiccup reads `~/.hiccup/config.json`.
                  "submit": "button[type=submit]", "success": { "url_contains": "/dashboard" } },
       "session": { "cookies": ["session"], "headers": ["Authorization"] },
       "nav_selector": "nav a, [role=tablist] a",
+      "listener_base": 8181,
       "exclude": ["/admin/flush"],
       "roles": {
         "admin": { "level": 100, "accounts": [

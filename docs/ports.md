@@ -8,6 +8,8 @@ Every network port hiccup uses, what listens on it, and how to change it. Everyt
 | **8080** | Burp's proxy listener | Burp | Burp -> Proxy -> Proxy settings. hiccup uses Burp's first running listener |
 | **9222** | the browser's CDP (Chrome DevTools Protocol) endpoint | `hiccup browser launch` | `hiccup browser launch --port <n>` |
 | **9223** | `hiccup browser relay`: the CDP endpoint without Burp's auth header, for Selenium | `hiccup browser relay` | `hiccup browser relay --listen 127.0.0.1:<n>` |
+| **8181**+ | per-account Burp proxy listeners for `--parallel` (one per account) | the site's `listener_base` | `"listener_base": <n>` on the site, or `"proxy_port": <n>` on an account |
+| **9181**+ | per-account browsers' CDP ports (listener + 1000) | `--parallel` | follows the listener port |
 | **8082** | mitmproxy's proxy listener | `hiccup mitm start` | `"mitm": {"proxy": "127.0.0.1:<n>"}` in config |
 | **8097** | hiccup's REST API inside mitmproxy (the addon) | `hiccup mitm start` | `"mitm": {"api_port": <n>}` in config |
 | **8090** | ZAP's API and proxy (ZAP serves both on one port) | hiccup's ZAP default | start ZAP with `-port <n>` and set `"zap": {"url": "http://127.0.0.1:<n>"}` or `HICCUP_ZAP_URL` |
