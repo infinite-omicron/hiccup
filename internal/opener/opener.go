@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // Command returns the command that opens path: Microsoft Excel for
@@ -38,7 +39,13 @@ func excelInstalled() bool {
 	return false
 }
 
-// Open opens path without waiting for the app to exit.
+// handoff bounds how long Open waits for the launcher to hand the file over.
+const handoff = 10 * time.Second
+
+// Open opens path in its app. It waits for the launcher (open, xdg-open,
+// rundll32) to hand the file over, which takes a moment when the app is still
+// starting; if hiccup exited first, the launcher could be cleaned up with it and
+// the app would start without the file. It does not wait for the app to exit.
 func Open(path string) error {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -48,6 +55,15 @@ func Open(path string) error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("open %s: %w", abs, err)
 	}
-	go func() { _ = cmd.Wait() }()
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			return fmt.Errorf("open %s: %w", abs, err)
+		}
+	case <-time.After(handoff):
+		// Some launchers stay until the app exits; the file is open by now.
+	}
 	return nil
 }
