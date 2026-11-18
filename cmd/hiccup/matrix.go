@@ -566,14 +566,22 @@ uploads the workbook to OneDrive or SharePoint, replacing the previous copy (see
 				m365Target = strings.ReplaceAll(a.cfg.Matrix.M365, "{site}", site)
 			}
 			others := csvPath != "" || jsonPath != "" || sheets != "" || burpIssues
+			out := map[string]any{}
 			if xlsx == "" && (m365Target != "" || !others) {
 				// The workbook is the default output, and it is what --m365 uploads.
 				xlsx = site + "-auth-matrix.xlsx"
+				// An app that already has it open would keep showing the old copy
+				// (opening it again only brings that window forward), so write a new one.
+				if opener.InUse(xlsx) {
+					xlsx = fmt.Sprintf("%s-auth-matrix-%s.xlsx", site, time.Now().Format("20060102-150405"))
+					out["note"] = site + "-auth-matrix.xlsx is open in another app, so this export was written to a new file"
+				}
+			} else if xlsx != "" && opener.InUse(xlsx) {
+				out["note"] = xlsx + " is open in another app; reload it there (File → Reload) to see this export"
 			}
 			if sheet == "" && a.cfg.Matrix != nil {
 				sheet = a.cfg.Matrix.Sheet
 			}
-			out := map[string]any{}
 			if xlsx != "" {
 				if template == "" && a.cfg.Matrix != nil {
 					template = expandHome(a.cfg.Matrix.Template)

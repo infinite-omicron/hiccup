@@ -67,3 +67,16 @@ func Open(path string) error {
 	}
 	return nil
 }
+
+// InUse reports whether a spreadsheet app has path open, going by the lock
+// files LibreOffice (".~lock.<name>#") and Microsoft Excel ("~$<name>")
+// keep next to documents they have open.
+func InUse(path string) bool {
+	dir, name := filepath.Dir(path), filepath.Base(path)
+	for _, lock := range []string{".~lock." + name + "#", "~$" + name} {
+		if _, err := os.Stat(filepath.Join(dir, lock)); err == nil {
+			return true
+		}
+	}
+	return false
+}
