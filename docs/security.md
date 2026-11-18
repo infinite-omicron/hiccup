@@ -24,6 +24,11 @@ The automated browser exposes CDP (Chrome DevTools Protocol) on `127.0.0.1` only
 
 Passwords can live in the OS keychain or in environment variables instead of the config file; see [configuration.md](configuration.md#credentials). `hiccup creds list` and `hiccup config show` never print secrets.
 
+The Google and Microsoft 365 tokens are stored mode 0600 under `~/.hiccup/`.
+
+- **Google:** limited to spreadsheets.
+- **Microsoft 365:** uses the delegated `Files.ReadWrite.All` permission, so it can reach only the files the signed-in user can. `hiccup m365 logout` deletes the Microsoft token.
+
 ## Replaying requests
 
 The auth matrix only replays GET, HEAD and OPTIONS unless you pass `--unsafe`. Replaying state-changing requests as other users modifies data on the target.

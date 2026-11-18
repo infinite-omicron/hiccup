@@ -28,7 +28,7 @@ hiccup config init                              # example config with a site, ro
 hiccup browser launch https://target.test       # Burp's Chromium, proxied through Burp
 hiccup history --format table
 hiccup login --all && hiccup matrix record --as admin1 && hiccup matrix run
-hiccup matrix export --xlsx matrix.xlsx
+hiccup matrix export                            # opens the auth matrix in Excel
 ```
 
 ## Documentation
@@ -39,7 +39,7 @@ hiccup matrix export --xlsx matrix.xlsx
 | [Burp](docs/burp.md) | starting Burp, Burp tools, BApp Store extensions |
 | [Browser automation](docs/browser.md) | CDP, Playwright and Selenium, the relay |
 | [Throttling and User-Agent](docs/throttling.md) | rate limits, back-off, consistent client hints |
-| [Auth matrix](docs/auth-matrix.md) | logins, sessions, horizontal and vertical privilege escalation, exports |
+| [Auth matrix](docs/auth-matrix.md) | logins, sessions, horizontal and vertical privilege escalation, Excel, Microsoft 365 and Google Sheets exports |
 | [Nuclei](docs/nuclei.md) | running Nuclei through the proxy, importing findings |
 | [Proxies](docs/proxies.md) | ZAP and mitmproxy, and what maps to what |
 | [Ports](docs/ports.md) | every port hiccup uses and how to change it |
