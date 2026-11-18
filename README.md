@@ -9,8 +9,9 @@ Output is JSON by default, so agents can parse it; add `--format table` for a hu
 
 - Phase 1: the extension, the core CLI, the browser, throttling and the Nuclei import.
 - Phase 2: login recipes, per-account sessions and the auth matrix.
+- Phase 3: installing BApp Store extensions and the Google Sheets export.
 
-Still to come: BApp installs and Google Sheets export (phase 3), then the ZAP and mitmproxy backends.
+Still to come: the ZAP and mitmproxy backends.
 
 ## Build
 
@@ -28,9 +29,12 @@ make test
 Load the jar yourself from Extensions → Installed → Add → Java → `dist/hiccup-burp.jar`, or let hiccup launch Burp with the extension preloaded:
 
 ```sh
-hiccup burp start                       # GUI
-hiccup burp start --headless            # no GUI
+hiccup burp start --headless            # no GUI; hiccup is preloaded
+hiccup burp start                       # GUI; add hiccup-burp.jar once in Extensions, Burp reloads it on every start
+hiccup burp stop                        # clean shutdown
 ```
+
+In headless mode, hiccup is loaded through `--user-config-file`. A config file's extension list *replaces* Burp's, so a GUI Burp doesn't get that treatment by default: it could save the replaced list over your own extensions. Use `--preload` to opt in anyway. Headless Burp never saves user settings, so preloading there is harmless.
 
 On load, the extension writes its URL and a fresh token to `~/.hiccup/burp.json` (mode 0600). Every `hiccup` command reads that file, so no setup is needed.
 
@@ -73,6 +77,22 @@ hiccup ua "Mozilla/5.0 (...) Chrome/150.0.0.0 Safari/537.36" --scope all --save
 ```
 
 `hiccup status`, `browser launch` and `run nuclei` push every site's throttle from config automatically.
+
+## BApp Store extensions
+
+```sh
+hiccup bapp search logger
+hiccup bapp install "Logger++" Autorize --save   # --save adds them to config burp.bapps
+hiccup bapp install                               # everything in config burp.bapps
+```
+
+What `bapp install` does:
+
+- Downloads each BApp into `~/.hiccup/bapps/<uuid>/<serial>/`, unpacks it (rejecting paths that escape the folder), and loads its entry point into the running Burp in one batch. Burp reloads all extensions once, hiccup included, and the CLI waits for hiccup to come back.
+- A newer version of a BApp replaces the older one.
+- Pro-only BApps are skipped on Community.
+- Python BApps run on Jython, and Ruby ones on JRuby. If Burp has neither configured, hiccup downloads the newest stable `jython-standalone` or `jruby-complete` from Maven Central and points Burp at it.
+- `hiccup burp start` installs the BApps listed in `burp.bapps` (skip that with `--no-bapps`).
 
 ## Burp tools
 
@@ -151,6 +171,12 @@ How it works:
   - Any other request is allowed for accounts at the recorder's level or above, or for any account at or above the level of someone who recorded it themselves.
   - You can override any of these in `~/.hiccup/sites/<site>/expectations.json`, e.g. `{"Reports": {"user": "allow"}, "*": {"auditor": "deny"}}`.
 - **Findings**: `vertical` when a lower level got access, `horizontal` when the same level reached another account's object (IDOR), and `forceful-browsing` when the anonymous account got access.
+- **Google Sheets**: `--sheets <spreadsheet ID or URL>` fills the same layout in a Google Sheet tab, creating the tab if it's missing. See `hiccup google --help` for credentials:
+  - a service-account key (share the sheet with its email), or
+  - a "Desktop app" OAuth client plus `hiccup google login` once, or
+  - Application Default Credentials.
+
+  The scope is limited to spreadsheets, and the token is stored mode 0600 in `~/.hiccup/google/`.
 - **xlsx export**: fills the *Auth Matrix* tab of your checklist template. One column pair (`Exp?` / `Actual`) per action, one row per account, and finding cells highlighted red (amber for `review`). The rest of the workbook is kept. Set `"matrix": {"template": "~/.hiccup/Checklist.xltx"}` in config, or pass `--template`.
 
 `testdata/authapp/app.py` is a small multi-role app with one bug of each kind. hiccup reports exactly those bugs against it, and no false positives on the routes that are properly protected.
@@ -175,6 +201,7 @@ How it works:
 | `HICCUP_BURP_PORT` | port the extension listens on (read by Burp's process) |
 | `HICCUP_USER_AGENT`, `HICCUP_THROTTLE_RPS` | per-run overrides; never written to config |
 | `HICCUP_CDP_URL`, `HICCUP_CDP_TOKEN` | drive any Chromium instead of the launched one |
+| `HICCUP_GOOGLE_CREDENTIALS` | Google credentials JSON (default `$HICCUP_HOME/google/credentials.json`) |
 
 ## API security
 
