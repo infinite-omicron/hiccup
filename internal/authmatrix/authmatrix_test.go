@@ -238,8 +238,16 @@ func TestRunAndExport(t *testing.T) {
 		t.Fatal(err)
 	}
 	cell := func(c string) string { v, _ := x.GetCellValue("Auth Matrix", c); return v }
-	if cell("C1") != "Users" || cell("E1") != "My Document" || cell("A4") != "admin1" || cell("A7") != "anon" || cell("C2") != "Exp?" || cell("F2") != "Actual" {
-		t.Errorf("layout: C1=%q E1=%q A4=%q A7=%q", cell("C1"), cell("E1"), cell("A4"), cell("A7"))
+	// Block 1 (Users): rows 1-7; a blank row 8; block 2 (My Document) from row 9.
+	for c, want := range map[string]string{
+		"B1": "Action:", "C1": "Users", "C2": "Exp?", "D2": "Actual", "A3": "Account",
+		"A4": "admin1", "A5": "user1", "A7": "anon", "A8": "",
+		"B9": "Action:", "C9": "My Document", "A11": "Account", "A12": "admin1",
+		"E1": "", "E5": "",
+	} {
+		if got := cell(c); got != want {
+			t.Errorf("%s = %q, want %q", c, got, want)
+		}
 	}
 	if d5 := cell("D5"); !strings.Contains(d5, "VERTICAL") || !strings.HasPrefix(cell("C5"), "deny: GET /admin/users") {
 		t.Errorf("user1 × Users: C5=%q D5=%q", cell("C5"), d5)

@@ -62,46 +62,61 @@ const (
 	MarkReview  = "review"
 )
 
-// Grid is the matrix laid out like the Checklist "Auth Matrix" tab: B1
-// "Action:", one column pair per action from C (name in row 1, "Exp?" and
-// "Actual" in row 2), "Account" in A3, one row per account from row 4.
+// Grid is the matrix laid out like the Checklist "Auth Matrix" tab, in
+// columns A–D with one block per action, stacked top to bottom:
+//
+//	   A          B         C            D
+//	1             Action:   Home
+//	2                       Exp?         Actual
+//	3  Account
+//	4  admin1               allow: …     GET / → 200 allowed
+//	…  (one row per account), then a blank row and the next action's block.
+//
 // Coordinates are 0-based [row, col].
 type Grid struct {
-	Rows    [][]string
-	Header  [][2]int          // action names and Exp?/Actual labels
-	Merged  [][2]int          // action name cells, merged with the cell to their right
-	Marks   map[[2]int]string // Actual cells with a finding or a review
-	DataRow int               // first account row
+	Rows [][]string
+	// Headers maps header cells to the template cell whose style they copy:
+	// "B1" (the "Action:" label), "C1" (the action name), "C2"/"D2"
+	// ("Exp?"/"Actual") and "A3" ("Account").
+	Headers map[[2]int]string
+	// Body lists the account rows, whose Exp?/Actual cells wrap.
+	Body  []int
+	Marks map[[2]int]string // Actual cells with a finding or a review
 }
 
+// GridCols is the number of columns the grid uses (A–D).
+const GridCols = 4
+
 func (m *Matrix) Grid() *Grid {
-	cols := 2 + 2*len(m.Actions)
-	g := &Grid{Marks: map[[2]int]string{}, DataRow: 3}
-	g.Rows = make([][]string, 3+len(m.Accounts))
-	for i := range g.Rows {
-		g.Rows[i] = make([]string, cols)
-	}
-	g.Rows[0][1], g.Rows[2][0] = "Action:", "Account"
-	for i, a := range m.Accounts {
-		g.Rows[3+i][0] = a.Name
-		g.Rows[3+i][1] = fmt.Sprintf("%s (%d)", a.Role, a.Level)
+	g := &Grid{Headers: map[[2]int]string{}, Marks: map[[2]int]string{}}
+	row := func() int {
+		g.Rows = append(g.Rows, make([]string, GridCols))
+		return len(g.Rows) - 1
 	}
 	for ai, act := range m.Actions {
-		col := 2 + 2*ai
-		g.Rows[0][col], g.Rows[1][col], g.Rows[1][col+1] = act.Name, "Exp?", "Actual"
-		g.Header = append(g.Header, [2]int{0, col}, [2]int{1, col}, [2]int{1, col + 1})
-		g.Merged = append(g.Merged, [2]int{0, col})
-		for i, a := range m.Accounts {
+		if ai > 0 {
+			row() // blank row between blocks
+		}
+		r := row()
+		g.Rows[r][1], g.Rows[r][2] = "Action:", act.Name
+		g.Headers[[2]int{r, 1}], g.Headers[[2]int{r, 2}] = "B1", "C1"
+		r = row()
+		g.Rows[r][2], g.Rows[r][3] = "Exp?", "Actual"
+		g.Headers[[2]int{r, 2}], g.Headers[[2]int{r, 3}] = "C2", "D2"
+		r = row()
+		g.Rows[r][0] = "Account"
+		g.Headers[[2]int{r, 0}] = "A3"
+		for _, a := range m.Accounts {
 			var exp, actual []string
 			worst := ""
-			for _, r := range act.Requests {
-				for _, c := range r.Cells {
+			for _, rr := range act.Requests {
+				for _, c := range rr.Cells {
 					if c.Account != a.Name {
 						continue
 					}
-					req := r.Key()
-					if r.ObjectRef {
-						req += " (" + r.Recorder + "'s)"
+					req := rr.Key()
+					if rr.ObjectRef {
+						req += " (" + rr.Recorder + "'s)"
 					}
 					exp = append(exp, c.Expected+": "+req)
 					line := c.Verdict
@@ -117,14 +132,17 @@ func (m *Matrix) Grid() *Grid {
 					actual = append(actual, req+" → "+line)
 				}
 			}
-			g.Rows[3+i][col] = strings.Join(exp, "\n")
-			g.Rows[3+i][col+1] = strings.Join(actual, "\n")
+			r = row()
+			g.Body = append(g.Body, r)
+			g.Rows[r][0] = a.Name
+			g.Rows[r][2] = strings.Join(exp, "\n")
+			g.Rows[r][3] = strings.Join(actual, "\n")
 			switch worst {
 			case "":
 			case MarkReview:
-				g.Marks[[2]int{3 + i, col + 1}] = MarkReview
+				g.Marks[[2]int{r, 3}] = MarkReview
 			default:
-				g.Marks[[2]int{3 + i, col + 1}] = MarkFinding
+				g.Marks[[2]int{r, 3}] = MarkFinding
 			}
 		}
 	}
@@ -160,11 +178,17 @@ func (m *Matrix) WriteXLSX(path string, o XLSXOptions) error {
 		}
 	}
 	sh := o.Sheet
-	headerStyle, _ := f.GetCellStyle(sh, "C2")
-	if headerStyle == 0 {
-		headerStyle, _ = f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
-	}
 	family, _ := f.GetDefaultFont()
+	bold, _ := f.NewStyle(&excelize.Style{Font: &excelize.Font{Family: family, Bold: true}})
+	// Header styles come from the template's first block, so every block looks like it.
+	headerStyle := map[string]int{}
+	for _, cell := range []string{"A3", "B1", "C1", "C2", "D2"} {
+		st, _ := f.GetCellStyle(sh, cell)
+		if st == 0 {
+			st = bold
+		}
+		headerStyle[cell] = st
+	}
 	top := &excelize.Alignment{WrapText: true, Vertical: "top"}
 	wrap, _ := f.NewStyle(&excelize.Style{Alignment: top, Font: &excelize.Font{Family: family}})
 	red, _ := f.NewStyle(&excelize.Style{Alignment: top,
@@ -176,20 +200,16 @@ func (m *Matrix) WriteXLSX(path string, o XLSXOptions) error {
 	name := func(r, c int) string { n, _ := excelize.CoordinatesToCellName(c+1, r+1); return n }
 	for r, row := range g.Rows {
 		for c, v := range row {
-			if v == "" {
-				continue
-			}
-			_ = f.SetCellValue(sh, name(r, c), v)
-			if r >= g.DataRow && c >= 1 {
-				_ = f.SetCellStyle(sh, name(r, c), name(r, c), wrap)
+			if v != "" {
+				_ = f.SetCellValue(sh, name(r, c), v)
 			}
 		}
 	}
-	for _, h := range g.Header {
-		_ = f.SetCellStyle(sh, name(h[0], h[1]), name(h[0], h[1]), headerStyle)
+	for _, r := range g.Body {
+		_ = f.SetCellStyle(sh, name(r, 0), name(r, GridCols-1), wrap)
 	}
-	for _, mc := range g.Merged {
-		_ = f.MergeCell(sh, name(mc[0], mc[1]), name(mc[0], mc[1]+1))
+	for rc, tmpl := range g.Headers {
+		_ = f.SetCellStyle(sh, name(rc[0], rc[1]), name(rc[0], rc[1]), headerStyle[tmpl])
 	}
 	for rc, mark := range g.Marks {
 		style := red
@@ -198,11 +218,14 @@ func (m *Matrix) WriteXLSX(path string, o XLSXOptions) error {
 		}
 		_ = f.SetCellStyle(sh, name(rc[0], rc[1]), name(rc[0], rc[1]), style)
 	}
-	_ = f.SetColWidth(sh, "A", "B", 14)
-	if len(m.Actions) > 0 {
-		last, _ := excelize.ColumnNumberToName(2 + 2*len(m.Actions))
-		_ = f.SetColWidth(sh, "C", last, 34)
-	}
+	_ = f.SetColWidth(sh, "A", "A", 14)
+	_ = f.SetColWidth(sh, "B", "B", 10)
+	_ = f.SetColWidth(sh, "C", "D", 48)
+	// Print landscape, one page wide, so Exp? and Actual stay side by side.
+	landscape, one, any := "landscape", 1, 0
+	_ = f.SetPageLayout(sh, &excelize.PageLayoutOptions{Orientation: &landscape, FitToWidth: &one, FitToHeight: &any})
+	fit := true
+	_ = f.SetSheetProps(sh, &excelize.SheetPropsOptions{FitToPage: &fit})
 	if idx, err := f.GetSheetIndex(sh); err == nil {
 		f.SetActiveSheet(idx)
 	}

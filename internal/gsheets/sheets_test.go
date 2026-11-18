@@ -71,20 +71,29 @@ func TestWrite(t *testing.T) {
 	if len(calls) != 5 || !strings.HasPrefix(calls[2], "POST /SHEET123/values/") || !strings.HasSuffix(calls[2], ":clear") {
 		t.Errorf("calls: %v", calls)
 	}
-	if values.Values[0][2] != "Users" || values.Values[1][3] != "Actual" || values.Values[4][0] != "user1" ||
-		!strings.Contains(values.Values[4][3], "VERTICAL") {
+	if values.Values[0][1] != "Action:" || values.Values[0][2] != "Users" || values.Values[1][3] != "Actual" ||
+		values.Values[2][0] != "Account" || values.Values[4][0] != "user1" || !strings.Contains(values.Values[4][3], "VERTICAL") {
 		t.Errorf("values: %v", values.Values)
 	}
-	var merged, red int
+	for _, row := range values.Values {
+		if len(row) != 4 {
+			t.Errorf("row %v should span columns A-D", row)
+		}
+	}
+	var merged, red, bold int
 	for _, f := range formats {
 		if _, ok := f["mergeCells"]; ok {
 			merged++
 		}
-		if b, _ := json.Marshal(f); strings.Contains(string(b), `"foregroundColor"`) {
+		b, _ := json.Marshal(f)
+		if strings.Contains(string(b), `"foregroundColor"`) {
 			red++
 		}
+		if strings.Contains(string(b), `"bold":true`) && !strings.Contains(string(b), `"foregroundColor"`) {
+			bold++
+		}
 	}
-	if merged != 1 || red != 1 {
-		t.Errorf("merged %d, red cells %d; requests %v", merged, red, formats)
+	if merged != 0 || red != 1 || bold != 5 {
+		t.Errorf("merged %d, red cells %d, bold headers %d", merged, red, bold)
 	}
 }

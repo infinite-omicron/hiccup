@@ -127,7 +127,7 @@ func Write(ctx context.Context, client *http.Client, spreadsheet, sheet string, 
 		return "", err
 	}
 
-	rows, cols := len(g.Rows), len(g.Rows[0])
+	cols := authmatrix.GridCols
 	rng := func(r1, c1, r2, c2 int) map[string]any {
 		return map[string]any{"sheetId": sheetID, "startRowIndex": r1, "endRowIndex": r2, "startColumnIndex": c1, "endColumnIndex": c2}
 	}
@@ -135,27 +135,22 @@ func Write(ctx context.Context, client *http.Client, spreadsheet, sheet string, 
 		return map[string]any{"repeatCell": map[string]any{"range": rng(r, c, r+1, c+1), "cell": map[string]any{"userEnteredFormat": f}, "fields": fields}}
 	}
 	reqs := []any{
-		map[string]any{"unmergeCells": map[string]any{"range": rng(0, 0, rows, cols)}},
-		// Reset the area, then wrap text in the matrix body.
-		map[string]any{"repeatCell": map[string]any{"range": rng(0, 0, rows, cols),
+		// Drop the old layout's merges and formatting, then wrap the account rows.
+		map[string]any{"unmergeCells": map[string]any{"range": map[string]any{"sheetId": sheetID}}},
+		map[string]any{"repeatCell": map[string]any{"range": map[string]any{"sheetId": sheetID},
 			"cell":   map[string]any{"userEnteredFormat": map[string]any{"backgroundColor": rgb("FFFFFF"), "textFormat": map[string]any{"bold": false}}},
 			"fields": "userEnteredFormat(backgroundColor,textFormat)"}},
-		map[string]any{"repeatCell": map[string]any{"range": rng(g.DataRow, 1, rows, cols),
-			"cell":   map[string]any{"userEnteredFormat": map[string]any{"wrapStrategy": "WRAP", "verticalAlignment": "TOP"}},
-			"fields": "userEnteredFormat(wrapStrategy,verticalAlignment)"}},
 		map[string]any{"updateDimensionProperties": map[string]any{
 			"range":      map[string]any{"sheetId": sheetID, "dimension": "COLUMNS", "startIndex": 2, "endIndex": cols},
-			"properties": map[string]any{"pixelSize": 260}, "fields": "pixelSize"}},
+			"properties": map[string]any{"pixelSize": 340}, "fields": "pixelSize"}},
 	}
-	for _, h := range [][2]int{{0, 1}, {2, 0}} {
-		reqs = append(reqs, format(h[0], h[1], map[string]any{"textFormat": map[string]any{"bold": true}}, "userEnteredFormat.textFormat.bold"))
+	for _, r := range g.Body {
+		reqs = append(reqs, map[string]any{"repeatCell": map[string]any{"range": rng(r, 0, r+1, cols),
+			"cell":   map[string]any{"userEnteredFormat": map[string]any{"wrapStrategy": "WRAP", "verticalAlignment": "TOP"}},
+			"fields": "userEnteredFormat(wrapStrategy,verticalAlignment)"}})
 	}
-	for _, h := range g.Header {
-		reqs = append(reqs, format(h[0], h[1], map[string]any{"textFormat": map[string]any{"bold": true}, "horizontalAlignment": "CENTER"},
-			"userEnteredFormat(textFormat.bold,horizontalAlignment)"))
-	}
-	for _, mc := range g.Merged {
-		reqs = append(reqs, map[string]any{"mergeCells": map[string]any{"range": rng(mc[0], mc[1], mc[0]+1, mc[1]+2), "mergeType": "MERGE_ALL"}})
+	for rc := range g.Headers {
+		reqs = append(reqs, format(rc[0], rc[1], map[string]any{"textFormat": map[string]any{"bold": true}}, "userEnteredFormat.textFormat.bold"))
 	}
 	for rc, mark := range g.Marks {
 		f := map[string]any{"backgroundColor": rgb("FFE699")}
