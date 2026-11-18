@@ -68,7 +68,7 @@ Content -> Documents -> Shared        (a tab on the Documents page, found at --d
 
 - **Recording:**
   - Requests are grouped into actions, named after the link's menu path (e.g. `Content -> Scheduled content`) or your marks.
-  - Object references in paths become templates: `/documents/42` → `/documents/${document_id}`.
+  - Object references in paths become templates: `/documents/42` -> `/documents/${document_id}`.
   - Static files, out-of-scope hosts, login and logout are dropped. Add more with the site's `exclude` regexes; `nav_selector` chooses which links are clicked.
 - **Replay:**
   - Each request is sent through the proxy, and so throttled, once per account.
@@ -95,15 +95,15 @@ If an owner is denied its own recorded requests, `matrix run` warns that its ses
 - **Excel (the default):** `hiccup matrix export` with no output flags writes `<site>-auth-matrix.xlsx` in the current directory and opens it in Microsoft Excel. Without Excel, it opens in your default app for `.xlsx` files, such as Numbers or LibreOffice.
   - **Opening:** only happens in an interactive terminal, never for scripts or agents. `--open` forces it and `--no-open` skips it. `--xlsx <file>` picks another file name.
   - **Already open:** opening a document that's already open only brings its existing window forward, so the app would keep showing the old copy. If Excel or LibreOffice has the default workbook open, the export writes a timestamped copy instead (`<site>-auth-matrix-20261118-124546.xlsx`) and opens that. A file you name with `--xlsx` is overwritten as asked, with a note to reload it in the app.
-  - **Layout:** the workbook fills the *Auth Matrix* tab of your checklist template in columns A–D, with one block per action stacked top to bottom:
+  - **Layout:** the workbook fills the *Auth Matrix* tab of your checklist template in columns A-D, with one block per action stacked top to bottom:
 
     | | A | B | C | D |
     |---|---|---|---|---|
     | 1 | | Action: | **Home** | |
     | 2 | | | Exp? | Actual |
     | 3 | Account | | | |
-    | 4 | admin1 | | allow: GET /dashboard | GET /dashboard → 200 allowed |
-    | … | one row per account, then a blank row and the next action (Dashboard, …) | | | |
+    | 4 | admin1 | | allow: GET /dashboard | GET /dashboard -> 200 allowed |
+    | ... | one row per account, then a blank row and the next action (Dashboard, ...) | | | |
 
     Each block copies the header styles of the template's first block (`B1`, `C1`, `C2`, `D2`, `A3`). Finding cells are highlighted red, and `review` cells amber. The rest of the workbook is kept, and the sheet prints landscape, one page wide.
   - **Template:** set `"matrix": {"template": "~/.hiccup/Checklist.xltx"}` in config, or pass `--template`.

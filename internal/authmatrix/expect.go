@@ -16,7 +16,7 @@ type Account struct {
 	Anonymous bool   `json:"anonymous,omitempty"`
 }
 
-// Overrides pin expectations: action name → role or account name → "allow"/"deny".
+// Overrides pin expectations: action name -> role or account name -> "allow"/"deny".
 // "*" as the action applies to every action.
 type Overrides map[string]map[string]string
 
@@ -70,7 +70,7 @@ func Expect(a, recorder Account, action string, r RecordedRequest, known map[str
 		return false, fmt.Sprintf("%s's object", recorder.Name)
 	}
 	if a.Level >= recorder.Level {
-		return true, fmt.Sprintf("level %d ≥ %d", a.Level, recorder.Level)
+		return true, fmt.Sprintf("level %d >= %d", a.Level, recorder.Level)
 	}
 	if lvl, ok := known[r.Key()]; ok && a.Level >= lvl {
 		return true, "seen in a lower-level recording"

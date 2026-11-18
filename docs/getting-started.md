@@ -28,7 +28,7 @@ gh attestation verify hiccup_X.Y.Z_linux_amd64.tar.gz -R infinite-omicron/hiccup
 
 Pick one:
 
-- **In Burp:** Extensions → Installed → Add, set Extension type to *Java*, and choose `hiccup-burp.jar`. Burp reloads it on every start from then on.
+- **In Burp:** Extensions -> Installed -> Add, set Extension type to *Java*, and choose `hiccup-burp.jar`. Burp reloads it on every start from then on.
 - **Let hiccup start Burp:** see [burp.md](burp.md#starting-and-stopping-burp).
 
 On load, the extension writes its URL and a fresh token to `~/.hiccup/burp.json` (mode 0600). Every `hiccup` command reads that file, so there's nothing to configure. It listens on `127.0.0.1:8099`; see [ports.md](ports.md).

@@ -10,7 +10,7 @@ hiccup import nuclei results.jsonl --dry-run                  # print the issues
 
 - `-proxy` with the proxy's listener, so the requests show up in history and go through the throttle
 - `-rl`/`-rld`, `-c 1 -bs 1` and a longer `-timeout`, from the site's throttle
-- `-H "User-Agent: …"` with the site's User-Agent
+- `-H "User-Agent: ..."` with the site's User-Agent
 - `-jsonl -o <tmp>`, so the results can be imported afterwards (`--no-import` skips that)
 
 Everything after `--` goes to Nuclei unchanged.

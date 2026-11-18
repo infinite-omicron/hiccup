@@ -275,7 +275,7 @@ func (a *app) crawlNav(cmd *cobra.Command, tab *browser.Session, s *config.Site,
 				return nil, err
 			}
 		}
-		fmt.Fprintf(os.Stderr, "hiccup: [%d/%d] %s → %s\n", i+1, len(queue), authmatrix.ActionName(it.Path), it.Href)
+		fmt.Fprintf(os.Stderr, "hiccup: [%d/%d] %s -> %s\n", i+1, len(queue), authmatrix.ActionName(it.Path), it.Href)
 		if _, err := tab.Navigate(it.Href, o.timeout); err != nil {
 			fmt.Fprintf(os.Stderr, "hiccup:   %v\n", err)
 			continue
@@ -577,7 +577,7 @@ uploads the workbook to OneDrive or SharePoint, replacing the previous copy (see
 					out["note"] = site + "-auth-matrix.xlsx is open in another app, so this export was written to a new file"
 				}
 			} else if xlsx != "" && opener.InUse(xlsx) {
-				out["note"] = xlsx + " is open in another app; reload it there (File → Reload) to see this export"
+				out["note"] = xlsx + " is open in another app; reload it there (File -> Reload) to see this export"
 			}
 			if sheet == "" && a.cfg.Matrix != nil {
 				sheet = a.cfg.Matrix.Sheet

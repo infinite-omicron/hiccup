@@ -44,15 +44,15 @@ Then point hiccup at it:
 
 | hiccup | Burp | ZAP | mitmproxy |
 |---|---|---|---|
-| history, sitemap, send | ✓ | messages, `sendRequest` | ✓ (send goes through the proxy) |
+| history, sitemap, send | yes | messages, `sendRequest` | yes (send goes through the proxy) |
 | browser | Burp's Chromium | local Chrome-family browser | local Chrome-family browser |
 | throttle | per host, jitter, back-off | network add-on rate limits (whole requests/s, no jitter or back-off) | per host, jitter, back-off |
-| User-Agent + client hints | ✓ | default UA + Replacer rules | ✓ |
+| User-Agent + client hints | yes | default UA + Replacer rules | yes |
 | scope | target scope | a `hiccup` context | URL prefixes in the addon |
 | issues | Pro only | alerts (attached to a history message) | stored by the addon (`$HICCUP_HOME/mitm-issues.json`) |
-| scan | Pro: crawl/audit | spider / active scan | — |
-| intercept | ✓ | break | — (mitmdump has none) |
-| Repeater, Intruder, extensions, BApps | ✓ | — | — |
+| scan | Pro: crawl/audit | spider / active scan | no |
+| intercept | yes | break | no (mitmdump has none) |
+| Repeater, Intruder, extensions, BApps | yes | no | no |
 
 The auth matrix, logins, the Nuclei import and the exports work with every proxy.
 
