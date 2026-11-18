@@ -15,12 +15,35 @@ import (
 )
 
 type Config struct {
-	Proxy  string           `json:"proxy,omitempty"` // burp, zap or mitmproxy
-	Burp   Burp             `json:"burp"`
-	Zap    *Zap             `json:"zap,omitempty"`
-	Mitm   *Mitm            `json:"mitm,omitempty"`
-	Matrix *Matrix          `json:"matrix,omitempty"`
-	Sites  map[string]*Site `json:"sites,omitempty"`
+	Proxy  string  `json:"proxy,omitempty"` // burp, zap or mitmproxy
+	Burp   Burp    `json:"burp"`
+	Zap    *Zap    `json:"zap,omitempty"`
+	Mitm   *Mitm   `json:"mitm,omitempty"`
+	Matrix *Matrix `json:"matrix,omitempty"`
+	// Microsoft is the Entra app registration used to sync to OneDrive/SharePoint.
+	Microsoft *Microsoft       `json:"microsoft,omitempty"`
+	Sites     map[string]*Site `json:"sites,omitempty"`
+}
+
+// Microsoft identifies the Entra ID (Azure AD) app registration for Microsoft 365.
+type Microsoft struct {
+	Tenant   string `json:"tenant,omitempty"`    // "organizations" (default), a tenant ID or a domain
+	ClientID string `json:"client_id,omitempty"` // public client with "Allow public client flows"
+}
+
+// MicrosoftSettings returns the Microsoft app registration, with
+// HICCUP_M365_TENANT and HICCUP_M365_CLIENT_ID applied.
+func (c *Config) MicrosoftSettings() (tenant, clientID string) {
+	if c.Microsoft != nil {
+		tenant, clientID = c.Microsoft.Tenant, c.Microsoft.ClientID
+	}
+	if v := os.Getenv("HICCUP_M365_TENANT"); v != "" {
+		tenant = v
+	}
+	if v := os.Getenv("HICCUP_M365_CLIENT_ID"); v != "" {
+		clientID = v
+	}
+	return tenant, clientID
 }
 
 // Zap locates a running ZAP (proxy "zap").
@@ -78,6 +101,9 @@ func (c *Config) MitmSettings() Mitm {
 type Matrix struct {
 	Template string `json:"template,omitempty"` // e.g. ~/.hiccup/Checklist.xltx
 	Sheet    string `json:"sheet,omitempty"`    // default "Auth Matrix"
+	// M365 is where every export also uploads the workbook: "onedrive:/path/" or
+	// a OneDrive/SharePoint folder URL. "{site}" is replaced by the site name.
+	M365 string `json:"m365,omitempty"`
 }
 
 type Burp struct {

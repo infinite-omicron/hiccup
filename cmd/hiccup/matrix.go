@@ -6,6 +6,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -15,6 +16,8 @@ import (
 	"github.com/infinite-omicron/hiccup/internal/browser"
 	"github.com/infinite-omicron/hiccup/internal/config"
 	"github.com/infinite-omicron/hiccup/internal/gsheets"
+	"github.com/infinite-omicron/hiccup/internal/m365"
+	"github.com/infinite-omicron/hiccup/internal/opener"
 	"github.com/infinite-omicron/hiccup/internal/proxy"
 	"github.com/infinite-omicron/hiccup/internal/session"
 )
@@ -414,12 +417,15 @@ func (a *app) matrixShowCmd() *cobra.Command {
 }
 
 func (a *app) matrixExportCmd() *cobra.Command {
-	var xlsx, csvPath, jsonPath, template, sheet, sheets string
-	var burpIssues, full bool
+	var xlsx, csvPath, jsonPath, template, sheet, sheets, m365Target string
+	var burpIssues, full, open, noOpen bool
 	cmd := &cobra.Command{
 		Use:   "export",
-		Short: "Export the last run to xlsx (your Checklist template), Google Sheets, csv, json and/or Burp issues",
-		Args:  cobra.NoArgs,
+		Short: "Export the last run to Excel (your Checklist template), Microsoft 365, Google Sheets, csv, json or Burp issues",
+		Long: `With no output flags, writes <site>-auth-matrix.xlsx in the current directory and opens it in
+Excel when run in an interactive terminal (--open and --no-open override that). --m365 also
+uploads the workbook to OneDrive or SharePoint, replacing the previous copy (see hiccup m365).`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			site, _, err := a.cfg.Site(a.site)
 			if err != nil {
@@ -429,18 +435,38 @@ func (a *app) matrixExportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if m365Target == "" && a.cfg.Matrix != nil {
+				m365Target = strings.ReplaceAll(a.cfg.Matrix.M365, "{site}", site)
+			}
+			others := csvPath != "" || jsonPath != "" || sheets != "" || burpIssues
+			if xlsx == "" && (m365Target != "" || !others) {
+				// The workbook is the default output, and it is what --m365 uploads.
+				xlsx = site + "-auth-matrix.xlsx"
+			}
+			if sheet == "" && a.cfg.Matrix != nil {
+				sheet = a.cfg.Matrix.Sheet
+			}
 			out := map[string]any{}
 			if xlsx != "" {
 				if template == "" && a.cfg.Matrix != nil {
 					template = expandHome(a.cfg.Matrix.Template)
 				}
-				if sheet == "" && a.cfg.Matrix != nil {
-					sheet = a.cfg.Matrix.Sheet
-				}
 				if err := m.WriteXLSX(xlsx, authmatrix.XLSXOptions{Template: template, Sheet: sheet}); err != nil {
 					return err
 				}
 				out["xlsx"] = xlsx
+			}
+			if m365Target != "" {
+				tenant, clientID := a.cfg.MicrosoftSettings()
+				client, err := m365.Client(cmd.Context(), m365.Settings{Tenant: tenant, ClientID: clientID})
+				if err != nil {
+					return err
+				}
+				item, err := m365.Upload(cmd.Context(), client, xlsx, m365Target)
+				if err != nil {
+					return err
+				}
+				out["m365"] = item.WebURL
 			}
 			if csvPath != "" {
 				if err := writeWith(csvPath, m.WriteCSV); err != nil {
@@ -455,9 +481,6 @@ func (a *app) matrixExportCmd() *cobra.Command {
 				out["json"] = jsonPath
 			}
 			if sheets != "" {
-				if sheet == "" && a.cfg.Matrix != nil {
-					sheet = a.cfg.Matrix.Sheet
-				}
 				client, err := gsheets.Client(cmd.Context())
 				if err != nil {
 					return err
@@ -479,20 +502,29 @@ func (a *app) matrixExportCmd() *cobra.Command {
 				}
 				out["burp_issues"] = n
 			}
-			if len(out) == 0 {
-				return fmt.Errorf("choose at least one of --xlsx, --sheets, --csv, --json, --burp-issues")
+			// Open the workbook for a person at a terminal, never for scripts or agents.
+			interactive := term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
+			if xlsx != "" && !noOpen && (open || interactive) {
+				if err := opener.Open(xlsx); err != nil {
+					return err
+				}
+				out["opened"] = true
 			}
 			return a.print(out)
 		},
 	}
-	cmd.Flags().StringVar(&xlsx, "xlsx", "", "write an xlsx workbook")
+	cmd.Flags().StringVar(&xlsx, "xlsx", "", "workbook to write (default <site>-auth-matrix.xlsx when no other output is chosen)")
 	cmd.Flags().StringVar(&template, "template", "", "workbook to fill (default: config matrix.template), e.g. Checklist.xltx")
-	cmd.Flags().StringVar(&sheet, "sheet", "", `tab to fill in --xlsx/--sheets (default "Auth Matrix")`)
+	cmd.Flags().StringVar(&sheet, "sheet", "", `tab to fill in the workbook or Google Sheet (default "Auth Matrix")`)
+	cmd.Flags().BoolVar(&open, "open", false, "open the workbook in Excel even when not in an interactive terminal")
+	cmd.Flags().BoolVar(&noOpen, "no-open", false, "don't open the workbook")
+	cmd.Flags().StringVar(&m365Target, "m365", "", "also upload the workbook to OneDrive/SharePoint: onedrive:/path/ or a folder URL (default: config matrix.m365)")
 	cmd.Flags().StringVar(&sheets, "sheets", "", "Google Sheet ID or URL to fill (see hiccup google)")
 	cmd.Flags().StringVar(&csvPath, "csv", "", "write a csv with one row per account and request")
 	cmd.Flags().StringVar(&jsonPath, "json", "", "write the matrix as json")
 	cmd.Flags().BoolVar(&full, "full", false, "json: include base64 requests and responses")
 	cmd.Flags().BoolVar(&burpIssues, "burp-issues", false, "add each finding to Burp as an issue (Burp Pro)")
+	cmd.MarkFlagsMutuallyExclusive("open", "no-open")
 	return cmd
 }
 
