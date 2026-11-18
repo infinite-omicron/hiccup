@@ -34,7 +34,7 @@ func (a *app) statusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return a.print(map[string]any{"backend": a.cfg.Backend, "health": h, "browser": br, "applied": applied})
+			return a.print(map[string]any{"backend": a.cfg.BackendName(), "health": h, "browser": br, "applied": applied})
 		},
 	}
 }

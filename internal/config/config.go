@@ -17,8 +17,61 @@ import (
 type Config struct {
 	Backend string           `json:"backend,omitempty"`
 	Burp    Burp             `json:"burp"`
+	Zap     *Zap             `json:"zap,omitempty"`
+	Mitm    *Mitm            `json:"mitm,omitempty"`
 	Matrix  *Matrix          `json:"matrix,omitempty"`
 	Sites   map[string]*Site `json:"sites,omitempty"`
+}
+
+// Zap locates a running ZAP (backend "zap").
+type Zap struct {
+	URL    string `json:"url,omitempty"`     // API, default http://127.0.0.1:8090
+	APIKey string `json:"api_key,omitempty"` // plaintext, env:VAR or keychain:service/account
+	Proxy  string `json:"proxy,omitempty"`   // proxy listener, default the API's host:port
+}
+
+// Mitm configures mitmproxy started by `hiccup mitm start` (backend "mitmproxy").
+type Mitm struct {
+	Proxy   string   `json:"proxy,omitempty"`    // listen address, default 127.0.0.1:8082
+	APIPort int      `json:"api_port,omitempty"` // hiccup addon API port, default 8097
+	Bin     string   `json:"bin,omitempty"`      // mitmdump binary, default from PATH
+	Args    []string `json:"args,omitempty"`     // extra mitmdump arguments
+}
+
+// ZapEndpoint is the ZAP API URL, API key reference and proxy, with HICCUP_ZAP_URL
+// and HICCUP_ZAP_API_KEY applied.
+func (c *Config) ZapEndpoint() (url, keyRef, proxy string) {
+	if c.Zap != nil {
+		url, keyRef, proxy = c.Zap.URL, c.Zap.APIKey, c.Zap.Proxy
+	}
+	if v := os.Getenv("HICCUP_ZAP_URL"); v != "" {
+		url = v
+	}
+	if v := os.Getenv("HICCUP_ZAP_API_KEY"); v != "" {
+		keyRef = v
+	}
+	if url == "" {
+		url = "http://127.0.0.1:8090"
+	}
+	return url, keyRef, proxy
+}
+
+// MitmSettings returns the mitmproxy settings with defaults filled in.
+func (c *Config) MitmSettings() Mitm {
+	m := Mitm{}
+	if c.Mitm != nil {
+		m = *c.Mitm
+	}
+	if m.Proxy == "" {
+		m.Proxy = "127.0.0.1:8082"
+	}
+	if m.APIPort == 0 {
+		m.APIPort = 8097
+	}
+	if m.Bin == "" {
+		m.Bin = "mitmdump"
+	}
+	return m
 }
 
 // Matrix says where `hiccup matrix export --xlsx` takes its layout from.

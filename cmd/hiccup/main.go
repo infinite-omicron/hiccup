@@ -15,7 +15,10 @@ import (
 
 	"github.com/infinite-omicron/hiccup/internal/backend"
 	"github.com/infinite-omicron/hiccup/internal/backend/burp"
+	"github.com/infinite-omicron/hiccup/internal/backend/mitm"
+	"github.com/infinite-omicron/hiccup/internal/backend/zap"
 	"github.com/infinite-omicron/hiccup/internal/config"
+	"github.com/infinite-omicron/hiccup/internal/secrets"
 )
 
 var version = "dev"
@@ -34,7 +37,7 @@ func main() {
 	a := &app{}
 	root := &cobra.Command{
 		Use:           "hiccup",
-		Short:         "Drive Burp (and later ZAP/mitmproxy) from scripts and agents",
+		Short:         "Drive Burp, ZAP or mitmproxy from scripts and agents",
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -72,6 +75,7 @@ func main() {
 		a.matrixCmd(),
 		a.burpCmd(),
 		a.bappCmd(),
+		a.mitmCmd(),
 		a.googleCmd(),
 	)
 
@@ -80,8 +84,7 @@ func main() {
 	stop()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "hiccup:", err)
-		var api *burp.APIError
-		if errors.As(err, &api) && api.Status == 501 {
+		if errors.Is(err, backend.ErrUnsupported) {
 			os.Exit(3)
 		}
 		os.Exit(1)
@@ -106,8 +109,21 @@ func (a *app) be() (backend.Backend, error) {
 			return nil, fmt.Errorf("no Burp token: load hiccup-burp.jar in Burp (it writes %s) or set HICCUP_BURP_TOKEN", config.RuntimePath())
 		}
 		a.backend = burp.New(url, token)
+	case "zap":
+		u, keyRef, proxy := a.cfg.ZapEndpoint()
+		key, err := secrets.Resolve(keyRef)
+		if err != nil {
+			return nil, fmt.Errorf("ZAP API key: %w", err)
+		}
+		a.backend = zap.New(u, key, proxy)
+	case "mitmproxy", "mitm":
+		u, token, err := mitmRuntime()
+		if err != nil {
+			return nil, err
+		}
+		a.backend = mitm.New(u, token, a.cfg.MitmSettings().Proxy)
 	default:
-		return nil, fmt.Errorf("backend %q is not implemented yet", name)
+		return nil, fmt.Errorf("unknown backend %q (burp, zap or mitmproxy)", name)
 	}
 	return a.backend, nil
 }
