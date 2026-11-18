@@ -47,6 +47,13 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || needs.release-please.outputs.tag }}
           fetch-depth: 0
+      # Release scripts come from the workflow's own commit, so rebuilding an
+      # older tag still has current tooling.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: tools
+          sparse-checkout: .github/scripts
       - name: Check the tag is SemVer
         run: |
           if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
@@ -74,7 +81,7 @@ jobs:
       - name: List the assets on the organization's linked artifacts page
         env:
           GH_TOKEN: ${{ github.token }}
-        run: .github/scripts/storage-records.sh "$TAG" dist/release/checksums.txt
+        run: tools/.github/scripts/storage-records.sh "$TAG" dist/release/checksums.txt
 
   homebrew:
     needs: [release-please, assets]
@@ -105,7 +112,7 @@ jobs:
       - if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || needs.release-please.outputs.tag }}
+          sparse-checkout: .github/scripts
       - if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
