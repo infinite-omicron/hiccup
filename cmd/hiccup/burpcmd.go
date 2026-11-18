@@ -23,7 +23,7 @@ func (a *app) burpCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "burp", Short: "Start Burp with hiccup loaded, and install extensions"}
 
 	var jar, install, javaBin string
-	var headless, acceptEULA bool
+	var headless, acceptEULA, noBApps, preload bool
 	var wait time.Duration
 	var extraArgs []string
 	start := &cobra.Command{
@@ -36,7 +36,17 @@ func (a *app) burpCmd() *cobra.Command {
 				h, err := burp.New(url, token).Health(hctx)
 				cancel()
 				if err == nil {
-					return a.print(map[string]any{"already_running": true, "url": url, "health": h})
+					out := map[string]any{"already_running": true, "url": url, "health": h}
+					if !noBApps && len(a.cfg.Burp.BApps) > 0 {
+						b, err := a.be()
+						if err != nil {
+							return err
+						}
+						if out["bapps"], err = a.installBApps(cmd, b, a.cfg.Burp.BApps, false); err != nil {
+							return err
+						}
+					}
+					return a.print(out)
 				}
 			}
 			if jar == "" {
@@ -56,9 +66,18 @@ func (a *app) burpCmd() *cobra.Command {
 			if javaBin != "" {
 				java = javaBin
 			}
-			userCfg, err := writeUserConfig(jar)
-			if err != nil {
-				return err
+			// A user config file's extension list replaces Burp's in-memory list.
+			// Headless Burp never saves user settings, so that is harmless there;
+			// a GUI Burp might save it over the user's own extensions, so only
+			// preload when asked to.
+			var userCfg string
+			if headless || preload {
+				if !headless {
+					fmt.Fprintln(os.Stderr, "hiccup: warning: --preload may replace the extensions saved in your Burp settings")
+				}
+				if userCfg, err = writeUserConfig(jar); err != nil {
+					return err
+				}
 			}
 			// The old runtime file belongs to a previous Burp; wait for the new one.
 			_ = os.Remove(config.RuntimePath())
@@ -77,7 +96,10 @@ func (a *app) burpCmd() *cobra.Command {
 			if headless {
 				args = append(args, "-Djava.awt.headless=true")
 			}
-			args = append(args, "-cp", burpJar, "burp.StartBurp", "--user-config-file="+userCfg)
+			args = append(args, "-cp", burpJar, "burp.StartBurp")
+			if userCfg != "" {
+				args = append(args, "--user-config-file="+userCfg)
+			}
 			args = append(args, extraArgs...)
 			logPath := filepath.Join(config.Home(), "burp.log")
 			logf, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
@@ -106,11 +128,25 @@ func (a *app) burpCmd() *cobra.Command {
 				hint := ""
 				if b, _ := os.ReadFile(logPath); strings.Contains(string(b), "Do you accept the license agreement") {
 					hint = "; Burp is waiting for its EULA to be accepted: run it once yourself, or pass --accept-eula"
+				} else if userCfg == "" {
+					hint = fmt.Sprintf("; if hiccup isn't loaded in this Burp yet, add it once: Extensions → Installed → Add → Java → %s (Burp reloads it on every start)", jar)
 				}
 				return fmt.Errorf("burp started (pid %d) but the hiccup API did not come up: %w (see %s)%s", pid, err, logPath, hint)
 			}
 			url, _ := cfg.BurpEndpoint()
-			return a.print(map[string]any{"pid": pid, "url": url, "log": logPath, "headless": headless})
+			out := map[string]any{"pid": pid, "url": url, "log": logPath, "headless": headless}
+			if !noBApps && len(a.cfg.Burp.BApps) > 0 {
+				b, err := a.be()
+				if err != nil {
+					return err
+				}
+				rows, err := a.installBApps(cmd, b, a.cfg.Burp.BApps, false)
+				if err != nil {
+					return fmt.Errorf("burp is running, but installing BApps failed: %w", err)
+				}
+				out["bapps"] = rows
+			}
+			return a.print(out)
 		},
 	}
 	start.Flags().StringVar(&jar, "jar", "", "hiccup-burp.jar (default: config burp.jar or ~/.hiccup/hiccup-burp.jar)")
@@ -118,6 +154,8 @@ func (a *app) burpCmd() *cobra.Command {
 	start.Flags().BoolVar(&headless, "headless", false, "run Burp without a GUI")
 	start.Flags().BoolVar(&acceptEULA, "accept-eula", false, "headless only: answer Burp's EULA prompt with yes (you are accepting PortSwigger's licence)")
 	start.Flags().StringVar(&javaBin, "java", "", "Java 21+ binary (default: Burp's bundled JRE)")
+	start.Flags().BoolVar(&noBApps, "no-bapps", false, "don't install the BApps listed in config burp.bapps")
+	start.Flags().BoolVar(&preload, "preload", false, "GUI: load hiccup via --user-config-file (may replace your saved extension list; headless always does this)")
 	start.Flags().DurationVar(&wait, "wait", 3*time.Minute, "how long to wait for the API")
 	start.Flags().StringArrayVar(&extraArgs, "burp-arg", nil, "extra Burp argument, e.g. --burp-arg=--project-file=x.burp (repeatable)")
 
@@ -143,18 +181,9 @@ func (a *app) burpCmd() *cobra.Command {
 				}
 				exts = append(exts, backend.Extension{Path: abs, Type: typ, Name: name})
 			}
-			_, oldToken := a.cfg.BurpEndpoint()
-			r, err := b.InstallExtensions(cmd.Context(), exts)
+			r, err := a.installAndWait(cmd, b, exts, reloadWait)
 			if err != nil {
 				return err
-			}
-			if r.Reloading {
-				// Burp reloads all extensions; wait for hiccup to come back with a new token.
-				ctx, cancel := context.WithTimeout(cmd.Context(), reloadWait)
-				defer cancel()
-				if _, err := waitRuntime(ctx, oldToken); err != nil {
-					return fmt.Errorf("extensions added, but hiccup did not come back after Burp reloaded extensions: %w", err)
-				}
 			}
 			return a.print(r)
 		},
@@ -163,7 +192,21 @@ func (a *app) burpCmd() *cobra.Command {
 	installExt.Flags().StringVar(&name, "name", "", "display name")
 	installExt.Flags().DurationVar(&reloadWait, "wait", time.Minute, "how long to wait for hiccup to reload")
 
-	cmd.AddCommand(start, installExt)
+	stop := &cobra.Command{
+		Use: "stop", Short: "Shut Burp down cleanly", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			b, err := a.be()
+			if err != nil {
+				return err
+			}
+			if err := b.Shutdown(cmd.Context()); err != nil {
+				return err
+			}
+			return a.print(map[string]bool{"ok": true})
+		},
+	}
+
+	cmd.AddCommand(start, stop, installExt)
 	return cmd
 }
 
@@ -256,6 +299,25 @@ func writeUserConfig(jar string) (string, error) {
 		return "", err
 	}
 	return p, os.WriteFile(p, b, 0o600)
+}
+
+// installAndWait loads extensions and, when Burp reloads them all (hiccup
+// included), waits for hiccup to come back and reconnects.
+func (a *app) installAndWait(cmd *cobra.Command, b backend.Backend, exts []backend.Extension, wait time.Duration) (*backend.InstallResult, error) {
+	_, oldToken := a.cfg.BurpEndpoint()
+	r, err := b.InstallExtensions(cmd.Context(), exts)
+	if err != nil {
+		return nil, err
+	}
+	if r.Reloading {
+		ctx, cancel := context.WithTimeout(cmd.Context(), wait)
+		defer cancel()
+		if _, err := waitRuntime(ctx, oldToken); err != nil {
+			return r, fmt.Errorf("extensions added, but hiccup did not come back after Burp reloaded extensions: %w", err)
+		}
+		a.backend = nil // the token changed; reconnect on next use
+	}
+	return r, nil
 }
 
 // answerPrompts watches Burp's log for its headless start-up prompts and
