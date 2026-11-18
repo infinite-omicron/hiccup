@@ -55,10 +55,84 @@ func (m *Matrix) WriteCSV(w io.Writer) error {
 	return cw.Error()
 }
 
+// Highlights for grid cells.
+const (
+	MarkFinding = "finding"
+	MarkReview  = "review"
+)
+
+// Grid is the matrix laid out like the Checklist "Auth Matrix" tab: B1
+// "Action:", one column pair per action from C (name in row 1, "Exp?" and
+// "Actual" in row 2), "Account" in A3, one row per account from row 4.
+// Coordinates are 0-based [row, col].
+type Grid struct {
+	Rows    [][]string
+	Header  [][2]int          // action names and Exp?/Actual labels
+	Merged  [][2]int          // action name cells, merged with the cell to their right
+	Marks   map[[2]int]string // Actual cells with a finding or a review
+	DataRow int               // first account row
+}
+
+func (m *Matrix) Grid() *Grid {
+	cols := 2 + 2*len(m.Actions)
+	g := &Grid{Marks: map[[2]int]string{}, DataRow: 3}
+	g.Rows = make([][]string, 3+len(m.Accounts))
+	for i := range g.Rows {
+		g.Rows[i] = make([]string, cols)
+	}
+	g.Rows[0][1], g.Rows[2][0] = "Action:", "Account"
+	for i, a := range m.Accounts {
+		g.Rows[3+i][0] = a.Name
+		g.Rows[3+i][1] = fmt.Sprintf("%s (%d)", a.Role, a.Level)
+	}
+	for ai, act := range m.Actions {
+		col := 2 + 2*ai
+		g.Rows[0][col], g.Rows[1][col], g.Rows[1][col+1] = act.Name, "Exp?", "Actual"
+		g.Header = append(g.Header, [2]int{0, col}, [2]int{1, col}, [2]int{1, col + 1})
+		g.Merged = append(g.Merged, [2]int{0, col})
+		for i, a := range m.Accounts {
+			var exp, actual []string
+			worst := ""
+			for _, r := range act.Requests {
+				for _, c := range r.Cells {
+					if c.Account != a.Name {
+						continue
+					}
+					req := r.Key()
+					if r.ObjectRef {
+						req += " (" + r.Recorder + "'s)"
+					}
+					exp = append(exp, c.Expected+": "+req)
+					line := c.Verdict
+					if c.Status != 0 {
+						line = fmt.Sprintf("%d %s", c.Status, c.Verdict)
+					}
+					if c.Finding != "" {
+						line = strings.ToUpper(c.Finding) + " — " + line
+						if worst == "" || worst == MarkReview {
+							worst = c.Finding
+						}
+					}
+					actual = append(actual, req+" → "+line)
+				}
+			}
+			g.Rows[3+i][col] = strings.Join(exp, "\n")
+			g.Rows[3+i][col+1] = strings.Join(actual, "\n")
+			switch worst {
+			case "":
+			case MarkReview:
+				g.Marks[[2]int{3 + i, col + 1}] = MarkReview
+			default:
+				g.Marks[[2]int{3 + i, col + 1}] = MarkFinding
+			}
+		}
+	}
+	return g
+}
+
 // XLSXOptions place the matrix in a workbook. With Template set, the named
 // sheet of that workbook (e.g. the "Auth Matrix" tab of Checklist.xltx) is
-// filled in its layout: B1 "Action:", one column pair per action from C
-// (name in row 1, "Exp?"/"Actual" in row 2), "Account" in A3, accounts from A4.
+// filled in the Grid layout and the rest of the workbook is kept.
 type XLSXOptions struct {
 	Template string
 	Sheet    string
@@ -97,68 +171,36 @@ func (m *Matrix) WriteXLSX(path string, o XLSXOptions) error {
 	amber, _ := f.NewStyle(&excelize.Style{Alignment: top,
 		Fill: excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"FFE699"}}, Font: &excelize.Font{Family: family}})
 
-	set := func(col, row int, v any, style int) {
-		cell, _ := excelize.CoordinatesToCellName(col, row)
-		_ = f.SetCellValue(sh, cell, v)
-		if style != 0 {
-			_ = f.SetCellStyle(sh, cell, cell, style)
+	g := m.Grid()
+	name := func(r, c int) string { n, _ := excelize.CoordinatesToCellName(c+1, r+1); return n }
+	for r, row := range g.Rows {
+		for c, v := range row {
+			if v == "" {
+				continue
+			}
+			_ = f.SetCellValue(sh, name(r, c), v)
+			if r >= g.DataRow && c >= 1 {
+				_ = f.SetCellStyle(sh, name(r, c), name(r, c), wrap)
+			}
 		}
 	}
-	set(2, 1, "Action:", 0)
-	set(1, 3, "Account", 0)
-	for i, a := range m.Accounts {
-		set(1, 4+i, a.Name, 0)
-		set(2, 4+i, fmt.Sprintf("%s (%d)", a.Role, a.Level), wrap)
+	for _, h := range g.Header {
+		_ = f.SetCellStyle(sh, name(h[0], h[1]), name(h[0], h[1]), headerStyle)
 	}
-	_ = f.SetColWidth(sh, "A", "A", 14)
-	_ = f.SetColWidth(sh, "B", "B", 14)
-	for ai, act := range m.Actions {
-		col := 3 + 2*ai
-		set(col, 1, act.Name, headerStyle)
-		c1, _ := excelize.CoordinatesToCellName(col, 1)
-		c2, _ := excelize.CoordinatesToCellName(col+1, 1)
-		_ = f.MergeCell(sh, c1, c2)
-		set(col, 2, "Exp?", headerStyle)
-		set(col+1, 2, "Actual", headerStyle)
-		cn1, _ := excelize.ColumnNumberToName(col)
-		cn2, _ := excelize.ColumnNumberToName(col + 1)
-		_ = f.SetColWidth(sh, cn1, cn2, 34)
-		for i, a := range m.Accounts {
-			var exp, act2 []string
-			worst := ""
-			for _, r := range act.Requests {
-				for _, c := range r.Cells {
-					if c.Account != a.Name {
-						continue
-					}
-					req := r.Key()
-					if r.ObjectRef {
-						req += " (" + r.Recorder + "'s)"
-					}
-					exp = append(exp, c.Expected+": "+req)
-					line := c.Verdict
-					if c.Status != 0 {
-						line = fmt.Sprintf("%d %s", c.Status, c.Verdict)
-					}
-					if c.Finding != "" {
-						line = strings.ToUpper(c.Finding) + " — " + line
-						if worst == "" || worst == "review" {
-							worst = c.Finding
-						}
-					}
-					act2 = append(act2, req+" → "+line)
-				}
-			}
-			style := wrap
-			switch {
-			case worst == "review":
-				style = amber
-			case worst != "":
-				style = red
-			}
-			set(col, 4+i, strings.Join(exp, "\n"), wrap)
-			set(col+1, 4+i, strings.Join(act2, "\n"), style)
+	for _, mc := range g.Merged {
+		_ = f.MergeCell(sh, name(mc[0], mc[1]), name(mc[0], mc[1]+1))
+	}
+	for rc, mark := range g.Marks {
+		style := red
+		if mark == MarkReview {
+			style = amber
 		}
+		_ = f.SetCellStyle(sh, name(rc[0], rc[1]), name(rc[0], rc[1]), style)
+	}
+	_ = f.SetColWidth(sh, "A", "B", 14)
+	if len(m.Actions) > 0 {
+		last, _ := excelize.ColumnNumberToName(2 + 2*len(m.Actions))
+		_ = f.SetColWidth(sh, "C", last, 34)
 	}
 	if idx, err := f.GetSheetIndex(sh); err == nil {
 		f.SetActiveSheet(idx)
