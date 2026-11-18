@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.2.0](https://github.com/infinite-omicron/hiccup/compare/v0.1.0...v0.2.0) (2026-11-18)
+
+
+### Features
+
+* **matrix:** color account rows by whether expected and actual match ([44a11db](https://github.com/infinite-omicron/hiccup/commit/44a11db9e2788c5483f7ba63a488a1484168ff44))
+* **matrix:** export to excel by default and open the workbook ([e98fbab](https://github.com/infinite-omicron/hiccup/commit/e98fbab42ff329396c19a2d412958edeb2d8365b))
+* **matrix:** log in and record accounts in parallel ([19d642a](https://github.com/infinite-omicron/hiccup/commit/19d642ae30309c399c007595d1260972b3201e68))
+* **matrix:** map the site's nav as menu paths and crawl it by depth ([c23366a](https://github.com/infinite-omicron/hiccup/commit/c23366a002f181f3792ce701ae2b3d4a7a1327d7))
+* **matrix:** show finding labels after the result ([ab8380a](https://github.com/infinite-omicron/hiccup/commit/ab8380a9d69f7545da39ec73b1a4e84a71907b9b))
+* **matrix:** sync the auth matrix workbook to onedrive and sharepoint ([84481ec](https://github.com/infinite-omicron/hiccup/commit/84481ec993af90b0359433651234e3e579ed497a))
+* **matrix:** word findings as potential privilege escalation ([7657a98](https://github.com/infinite-omicron/hiccup/commit/7657a984761c51239cef05e23d95cbd1ffbbbdc4))
+* **proxy:** per-account browsers and proxy listeners ([2d0a2f4](https://github.com/infinite-omicron/hiccup/commit/2d0a2f47a258209ff2ae5ff618a8b10e27e23349))
+
+
+### Bug Fixes
+
+* **extension:** serve the API without jdk.httpserver ([659812b](https://github.com/infinite-omicron/hiccup/commit/659812b1325eda4dcebf50a43f4c2eaf0a42c69b)), closes [#7](https://github.com/infinite-omicron/hiccup/issues/7)
+* **login:** recover when the browser detaches the page mid-login ([584d0e2](https://github.com/infinite-omicron/hiccup/commit/584d0e2a73995837f7622a8e182de2a17c0d2a9e))
+* **login:** suggest valid syntax when an account has no session ([7102a36](https://github.com/infinite-omicron/hiccup/commit/7102a36581b282145c2d97338f2ef838366e7137))
+* **matrix:** open a fresh workbook when the old one is still open ([ee7fadb](https://github.com/infinite-omicron/hiccup/commit/ee7fadb9da57bc4cc5b6d506247c31ef8a903d26))
+* **matrix:** stack actions vertically in columns A-D ([318283b](https://github.com/infinite-omicron/hiccup/commit/318283b3d3b41eb5bcdc6034fa37f96668903535))
+* **matrix:** wait for the opener to hand the workbook to the app ([2e9b2f4](https://github.com/infinite-omicron/hiccup/commit/2e9b2f494e503cf667d64acc4a3603b684a6213b))
+* **matrix:** write the auth matrix workbook owner-only ([5cab745](https://github.com/infinite-omicron/hiccup/commit/5cab745a1e851f288c30b5ab0ee1cac6f122f85e))
+* **scope:** accept bare hostnames in scope commands ([ebbf86d](https://github.com/infinite-omicron/hiccup/commit/ebbf86de519109bcdd1fead8965b8bd3e746fe74)), closes [#10](https://github.com/infinite-omicron/hiccup/issues/10)
+
+
+### Documentation
+
+* document bare-host scope and running two burps with hiccup ([677047a](https://github.com/infinite-omicron/hiccup/commit/677047aea24e98f54aee490f32b03daf311113b4))
+* document nav mapping, depth and excluding action links ([6bda753](https://github.com/infinite-omicron/hiccup/commit/6bda7532487cee0c6cb20334c0373f7368736e5a))
+* document parallel accounts, per-account ports and the password manager ([e300eae](https://github.com/infinite-omicron/hiccup/commit/e300eae050d1ac8020b8f358c257635fa0fc3105))
+* document the excel default and microsoft 365 sync ([acd792a](https://github.com/infinite-omicron/hiccup/commit/acd792aab32b4879e07c766dfd15a1e9f3eb884b))
+* move usage docs out of the readme into docs/ ([8018b16](https://github.com/infinite-omicron/hiccup/commit/8018b160c9446079203413b0e774fe6f701db08d))
+
 ## 0.1.0 (2026-11-18)
 
 
