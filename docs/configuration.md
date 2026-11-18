@@ -44,6 +44,29 @@ hiccup reads `~/.hiccup/config.json`.
 - **Login and session:** [auth-matrix.md](auth-matrix.md#logins-and-sessions)
 - **`proxy`, `zap` and `mitm`:** [proxies.md](proxies.md)
 
+## Microsoft 365
+
+Syncing the auth matrix workbook to OneDrive or SharePoint (`matrix export --m365`) signs in through an Entra ID (Azure AD) app registration in your tenant. Register one once:
+
+1. Entra admin center → App registrations → New registration. Supported account types: this organizational directory.
+2. Authentication → *Allow public client flows* → Yes (the device-code flow needs it). No redirect URI or client secret is needed.
+3. API permissions → Microsoft Graph → Delegated → `Files.ReadWrite.All`. Users can usually consent to this themselves; your tenant may require an admin to grant it.
+
+Then:
+
+```json
+"microsoft": { "client_id": "<application (client) ID>", "tenant": "<tenant ID or contoso.com>" },
+"matrix": { "m365": "onedrive:/Pentests/{site}/" }
+```
+
+```sh
+hiccup m365 login     # prints a code to enter at microsoft.com/devicelogin
+hiccup m365 status    # who you're signed in as, and your OneDrive URL
+hiccup m365 logout
+```
+
+`tenant` defaults to `organizations` (any work or school account). The token is stored in `~/.hiccup/microsoft/token.json` (0600) and refreshed automatically.
+
 ## Credentials
 
 A password can be:
@@ -74,6 +97,7 @@ The ZAP API key in `zap.api_key` accepts the same forms.
 | `HICCUP_CDP_URL`, `HICCUP_CDP_TOKEN` | drive any Chromium over CDP (Chrome DevTools Protocol) instead of the launched one |
 | `HICCUP_USER_AGENT`, `HICCUP_THROTTLE_RPS` | per-run overrides; never written to config |
 | `HICCUP_GOOGLE_CREDENTIALS` | Google credentials JSON (default `$HICCUP_HOME/google/credentials.json`) |
+| `HICCUP_M365_CLIENT_ID`, `HICCUP_M365_TENANT` | the Entra ID app registration for Microsoft 365 sync |
 
 ## What lives in `~/.hiccup`
 
@@ -85,5 +109,6 @@ The ZAP API key in `zap.api_key` accepts the same forms.
 | `sites/<site>/` | auth matrix recordings, results and `expectations.json` |
 | `bapps/` | downloaded BApps; `jython/` and `jruby/` runtimes |
 | `google/` | Google credentials and token (0600) |
+| `microsoft/` | Microsoft 365 token (0600) |
 | `browser-profile*` | the automated browser's profiles |
 | `*.log` | Burp, mitmproxy and browser logs from the last start |

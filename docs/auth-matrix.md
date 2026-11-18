@@ -32,7 +32,7 @@ hiccup matrix record --as user1           # recording lower roles too improves t
 hiccup login --all                        # fresh sessions for every account
 hiccup matrix run                         # replay every recorded request as every account
 hiccup matrix show --format table         # findings (--all for every cell)
-hiccup matrix export --xlsx matrix.xlsx --csv matrix.csv --burp-issues
+hiccup matrix export                      # acme-auth-matrix.xlsx, opened in Excel
 ```
 
 For actions that the nav links don't cover, record by hand:
@@ -71,7 +71,16 @@ If an owner is denied its own recorded requests, `matrix run` warns that its ses
 
 ## Exports
 
-- **xlsx:** fills the *Auth Matrix* tab of your checklist template. Each action gets a column pair (`Exp?` / `Actual`) and each account a row. Finding cells are highlighted red, and `review` cells amber. The rest of the workbook is kept. Set `"matrix": {"template": "~/.hiccup/Checklist.xltx"}` in config, or pass `--template`.
+- **Excel (the default):** `hiccup matrix export` with no output flags writes `<site>-auth-matrix.xlsx` in the current directory and opens it in Microsoft Excel. Without Excel, it opens in your default app for `.xlsx` files, such as Numbers or LibreOffice.
+  - **Opening:** only happens in an interactive terminal, never for scripts or agents. `--open` forces it and `--no-open` skips it. `--xlsx <file>` picks another file name.
+  - **Layout:** the workbook fills the *Auth Matrix* tab of your checklist template. Each action gets a column pair (`Exp?` / `Actual`) and each account a row. Finding cells are highlighted red, and `review` cells amber. The rest of the workbook is kept.
+  - **Template:** set `"matrix": {"template": "~/.hiccup/Checklist.xltx"}` in config, or pass `--template`.
+- **Microsoft 365 (OneDrive or SharePoint):** `--m365 <target>` also uploads the workbook, replacing the previous copy, so the team sees the latest matrix in Excel for the web or the desktop app. To sync on every export, set `"matrix": {"m365": "<target>"}` in config; `{site}` in the target is replaced by the site name. Targets:
+  - `onedrive:/Pentests/{site}/`: a folder in your OneDrive (the file keeps its name), or `onedrive:/Pentests/matrix.xlsx` for a fixed name
+  - a OneDrive or SharePoint **folder URL** copied from the browser, e.g. `https://contoso.sharepoint.com/sites/Pentest/Shared Documents/acme`
+  - a **file URL**: that file's content is replaced
+
+  Sign in once with `hiccup m365 login`, a device code you enter at microsoft.com/devicelogin. It uses an Entra ID app registration of your own; see [configuration.md](configuration.md#microsoft-365).
 - **Google Sheets:** `--sheets <spreadsheet ID or URL>` fills the same layout in a Google Sheet tab, creating the tab if it's missing. Credentials, in order (see `hiccup google --help`):
   1. a service-account key (share the sheet with its email)
   2. a "Desktop app" OAuth client plus `hiccup google login` once
