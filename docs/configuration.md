@@ -22,7 +22,8 @@ hiccup reads `~/.hiccup/config.json`.
       "login": { "url": "/login", "username": "#email", "password": "#password",
                  "submit": "button[type=submit]", "success": { "url_contains": "/dashboard" } },
       "session": { "cookies": ["session"], "headers": ["Authorization"] },
-      "nav_selector": "nav a",
+      "nav_selector": "nav a, [role=tablist] a",
+      "exclude": ["/admin/flush"],
       "roles": {
         "admin": { "level": 100, "accounts": [
           { "name": "admin1", "username": "admin1@acme.test", "password": "plaintext-ok" } ] },
