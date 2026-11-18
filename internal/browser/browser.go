@@ -4,10 +4,12 @@ package browser
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/remote"
@@ -15,12 +17,47 @@ import (
 
 // Session is a CDP attachment to one page target.
 type Session struct {
-	Ctx    context.Context
-	cancel func()
+	Ctx context.Context
+	// root is the browser-level connection; contextID the tab's browser
+	// context ("" for the default one). Both survive the tab being swapped.
+	root      context.Context
+	contextID cdp.BrowserContextID
+	// cancels run in reverse on Close: re-attachments first, then the original
+	// tab (which disposes an isolated browser context), then the connection.
+	cancels []func()
 }
 
-// Close detaches from the tab, leaving the tab and the browser open.
-func (s *Session) Close() { s.cancel() }
+// Close detaches from the tab, leaving the tab and the browser open, except
+// for an isolated tab, which is closed with its browser context.
+func (s *Session) Close() {
+	for i := len(s.cancels) - 1; i >= 0; i-- {
+		s.cancels[i]()
+	}
+}
+
+// reattach finds the page in this session's browser context again after the
+// browser detached it (for example when a navigation swaps the page's
+// target, or its window was closed) and continues on it.
+func (s *Session) reattach() error {
+	targets, err := chromedp.Targets(s.root)
+	if err != nil {
+		return err
+	}
+	for _, t := range targets {
+		if t.Type != "page" || (s.contextID != "" && t.BrowserContextID != s.contextID) {
+			continue
+		}
+		tab, cancel := chromedp.NewContext(s.root, chromedp.WithTargetID(t.TargetID), chromedp.WithDetachOnCancel())
+		if err := chromedp.Do(tab); err != nil {
+			cancel()
+			continue
+		}
+		s.Ctx = tab
+		s.cancels = append(s.cancels, cancel)
+		return nil
+	}
+	return errors.New("no page left in the browser context (was its window closed?)")
+}
 
 // AuthHeader is the header Burp's Chromium build checks on its DevTools HTTP endpoints.
 const AuthHeader = "x-burp-authorization"
@@ -85,7 +122,11 @@ func Attach(ctx context.Context, ep Endpoint, opts AttachOptions) (*Session, err
 		cancel()
 		return nil, err
 	}
-	return &Session{Ctx: tab, cancel: func() { cancelTab(); cancel() }}, nil
+	s := &Session{Ctx: tab, root: root, cancels: []func(){cancel, cancelTab}}
+	if c := chromedp.FromContext(tab); c != nil {
+		s.contextID = c.BrowserContextID
+	}
+	return s, nil
 }
 
 // OverrideUA applies a UA plus matching client-hint metadata to this tab, so
