@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -122,12 +123,11 @@ func (a *app) matrixMapCmd() *cobra.Command {
 }
 
 func (a *app) matrixRecordCmd() *cobra.Command {
-	var as, selector string
-	var manual bool
-	var settle, timeout time.Duration
-	var maxLinks, depth int
+	var as []string
+	var all, manual, parallel, headless bool
+	var o recordOptions
 	cmd := &cobra.Command{
-		Use:   "record --as <account>",
+		Use:   "record --as <account>[,<account>...]",
 		Short: "Log in as an account and record the requests each nav action makes",
 		Long: "Auto mode logs in (fresh browser context), maps the site's nav from the browser, including\n" +
 			"submenus, and opens every link. Each action is named after its menu path, e.g.\n" +
@@ -135,16 +135,35 @@ func (a *app) matrixRecordCmd() *cobra.Command {
 			"on those pages. Preview the paths with `hiccup matrix map`. GET links that do something\n" +
 			"(e.g. flush caches) are followed too: add them to the site's exclude list to skip them.\n\n" +
 			"Manual mode logs in and lets you browse; run `hiccup matrix mark \"<action>\"` before each\n" +
-			"action and `hiccup matrix stop` at the end.",
+			"action and `hiccup matrix stop` at the end.\n\n" +
+			"With --parallel (Burp), each account gets its own browser on its own Burp proxy listener and\n" +
+			"they record at the same time; each recording only takes requests from its account's listener.\n" +
+			"With --manual --parallel you browse every account's window yourself, marking actions with\n" +
+			"`hiccup matrix mark --as <account> \"<action>\"`, and finish with `hiccup matrix stop --all`.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			site, s, err := a.cfg.Site(a.site)
 			if err != nil {
 				return err
 			}
-			role, r, acct, ok := s.FindAccount(as)
-			if !ok {
-				return fmt.Errorf("no account %q in site %s", as, site)
+			var accounts []*config.Account
+			if all {
+				for _, r := range s.Accounts() {
+					accounts = append(accounts, r.Account)
+				}
+			}
+			for _, name := range as {
+				_, _, acct, ok := s.FindAccount(name)
+				if !ok {
+					return fmt.Errorf("no account %q in site %s", name, site)
+				}
+				accounts = append(accounts, acct)
+			}
+			switch {
+			case len(accounts) == 0:
+				return fmt.Errorf("name an account with --as (or several, or --all)")
+			case len(accounts) > 1 && !parallel:
+				return fmt.Errorf("recording several accounts at once needs --parallel")
 			}
 			b, err := a.proxyClient()
 			if err != nil {
@@ -153,69 +172,165 @@ func (a *app) matrixRecordCmd() *cobra.Command {
 			if _, err := a.applySites(cmd.Context(), b); err != nil {
 				return err
 			}
-			f, err := a.filter(s)
-			if err != nil {
+			if o.filter, err = a.filter(s); err != nil {
 				return err
 			}
-
-			if manual {
-				// Log in in the visible tab: that is where the user will browse.
-				if _, err := a.login(cmd, b, site, s, acct, loginOptions{visible: true, timeout: timeout}); err != nil {
-					return err
-				}
-				id, err := latestID(cmd.Context(), b)
+			if o.selector == "" {
+				o.selector = s.NavSelector
+			}
+			if o.selector == "" {
+				o.selector = defaultNavSelector
+			}
+			o.manual, o.parallel, o.headless = manual, parallel, headless
+			if !parallel {
+				res, err := a.recordAccount(cmd, b, site, s, accounts[0], o)
 				if err != nil {
 					return err
 				}
-				st := &authmatrix.State{Site: site, Account: acct.Name, StartID: id, Marks: []authmatrix.Mark{{Action: "Landing", FromID: id}}}
-				if err := authmatrix.SaveState(st); err != nil {
-					return err
+				return a.printRecording(res, false)
+			}
+			results := make([]*recordResult, len(accounts))
+			errs := make([]error, len(accounts))
+			if manual {
+				for i, acct := range accounts { // one terminal: log in each in turn
+					results[i], errs[i] = a.recordAccount(cmd, b, site, s, acct, o)
 				}
-				fmt.Fprintf(os.Stderr, "hiccup: recording as %s. Browse in Burp's browser; run `hiccup matrix mark \"<action>\"` before each action and `hiccup matrix stop` when done.\n", acct.Name)
-				return a.print(st)
+			} else {
+				var wg sync.WaitGroup
+				for i, acct := range accounts {
+					wg.Go(func() { results[i], errs[i] = a.recordAccount(cmd, b, site, s, acct, o) })
+				}
+				wg.Wait()
 			}
-
-			var tab *browser.Session
-			if _, err := a.login(cmd, b, site, s, acct, loginOptions{timeout: timeout, keep: &tab}); err != nil {
-				return err
+			for i, err := range errs {
+				if err != nil {
+					return fmt.Errorf("%s: %w", accounts[i].Name, err)
+				}
 			}
-			defer tab.Close()
-			if selector == "" {
-				selector = s.NavSelector
+			if manual {
+				fmt.Fprintf(os.Stderr, "hiccup: recording %d accounts, each in its own browser window. Run `hiccup matrix mark --as <account> \"<action>\"` before each action and `hiccup matrix stop --all` when done.\n", len(accounts))
 			}
-			if selector == "" {
-				selector = defaultNavSelector
+			var rows []recordRow
+			for _, r := range results {
+				rows = append(rows, r.rows...)
 			}
-			startID, err := latestID(cmd.Context(), b)
-			if err != nil {
-				return err
-			}
-			marks := []authmatrix.Mark{{Action: "Home", FromID: startID}}
-			_, err = a.crawlNav(cmd, tab, s, crawlOptions{selector: selector, depth: depth, maxLinks: maxLinks, filter: f,
-				timeout: timeout, settle: settle, visit: true,
-				before: func(path []string) error {
-					id, err := latestID(cmd.Context(), b)
-					if err != nil {
-						return err
-					}
-					marks = append(marks, authmatrix.Mark{Action: authmatrix.ActionName(path), FromID: id})
-					return nil
-				}})
-			if err != nil {
-				return err
-			}
-			return a.finishRecording(cmd, b, site, role, r.Level, acct.Name, startID, marks, f)
+			return a.printRecording(&recordResult{rows: rows, states: collectStates(results)}, true)
 		},
 	}
-	cmd.Flags().StringVar(&as, "as", "", "account to record as (required)")
+	cmd.Flags().StringSliceVar(&as, "as", nil, "account(s) to record as; several need --parallel")
+	cmd.Flags().BoolVar(&all, "all", false, "record every account of the site (needs --parallel)")
 	cmd.Flags().BoolVar(&manual, "manual", false, "browse yourself and mark actions")
-	cmd.Flags().StringVar(&selector, "selector", "", "CSS selector for nav links (default: site nav_selector or common nav containers)")
-	cmd.Flags().DurationVar(&settle, "settle", time.Second, "wait after each page load for background requests")
-	cmd.Flags().DurationVar(&timeout, "timeout", 60*time.Second, "login and page load timeout")
-	cmd.Flags().IntVar(&maxLinks, "max-links", 100, "maximum nav links to follow")
-	cmd.Flags().IntVar(&depth, "depth", 2, "1 follows the landing page's nav; 2 also follows nav links that appear on those pages (tabs, section menus); and so on")
-	_ = cmd.MarkFlagRequired("as")
+	cmd.Flags().BoolVar(&parallel, "parallel", false, "give each account its own browser and Burp proxy listener, and record them at once")
+	cmd.Flags().BoolVar(&headless, "headless", false, "--parallel: run the account browsers without windows")
+	cmd.Flags().StringVar(&o.selector, "selector", "", "CSS selector for nav links (default: site nav_selector or common nav containers)")
+	cmd.Flags().DurationVar(&o.settle, "settle", time.Second, "wait after each page load for background requests")
+	cmd.Flags().DurationVar(&o.timeout, "timeout", 60*time.Second, "login and page load timeout")
+	cmd.Flags().IntVar(&o.maxLinks, "max-links", 100, "maximum nav links to follow")
+	cmd.Flags().IntVar(&o.depth, "depth", 2, "1 follows the landing page's nav; 2 also follows nav links that appear on those pages (tabs, section menus); and so on")
+	cmd.MarkFlagsMutuallyExclusive("as", "all")
 	return cmd
+}
+
+type recordOptions struct {
+	selector                   string
+	depth, maxLinks            int
+	settle, timeout            time.Duration
+	filter                     authmatrix.Filter
+	manual, parallel, headless bool
+}
+
+type recordRow struct {
+	Account  string `json:"account"`
+	Action   string `json:"action"`
+	Requests int    `json:"requests"`
+	Example  string `json:"example"`
+}
+
+type recordResult struct {
+	rows   []recordRow
+	states []*authmatrix.State // manual mode: recordings in progress
+}
+
+func collectStates(results []*recordResult) []*authmatrix.State {
+	var out []*authmatrix.State
+	for _, r := range results {
+		out = append(out, r.states...)
+	}
+	return out
+}
+
+func (a *app) printRecording(r *recordResult, withAccount bool) error {
+	if len(r.states) > 0 {
+		if len(r.states) == 1 {
+			return a.print(r.states[0])
+		}
+		return a.print(r.states, "account", "listener_port", "start_id")
+	}
+	if withAccount {
+		return a.print(r.rows, "account", "action", "requests", "example")
+	}
+	return a.print(r.rows, "action", "requests", "example")
+}
+
+// recordAccount records one account. With o.parallel it uses the account's
+// own browser and proxy listener; otherwise a fresh browser context (auto) or
+// the visible tab (manual).
+func (a *app) recordAccount(cmd *cobra.Command, b proxy.Proxy, site string, s *config.Site, acct *config.Account, o recordOptions) (*recordResult, error) {
+	role, r, _, _ := s.FindAccount(acct.Name)
+	lo := loginOptions{timeout: o.timeout, visible: o.manual}
+	label := ""
+	if o.parallel {
+		port := s.AccountPorts()[acct.Name]
+		if _, err := a.launchAccountBrowser(cmd, b, acct.Name, proxy.BrowserOptions{UA: a.siteUA(), Headless: o.headless}, false); err != nil {
+			return nil, err
+		}
+		lo.browser, lo.listener, label = acct.Name, port, acct.Name+" "
+	}
+
+	if o.manual {
+		if _, err := a.login(cmd, b, site, s, acct, lo); err != nil {
+			return nil, err
+		}
+		id, err := latestID(cmd.Context(), b)
+		if err != nil {
+			return nil, err
+		}
+		st := &authmatrix.State{Site: site, Account: acct.Name, StartID: id, ListenerPort: lo.listener,
+			Marks: []authmatrix.Mark{{Action: "Landing", FromID: id}}}
+		if err := authmatrix.SaveState(st); err != nil {
+			return nil, err
+		}
+		if !o.parallel {
+			fmt.Fprintf(os.Stderr, "hiccup: recording as %s. Browse in Burp's browser; run `hiccup matrix mark \"<action>\"` before each action and `hiccup matrix stop` when done.\n", acct.Name)
+		}
+		return &recordResult{states: []*authmatrix.State{st}}, nil
+	}
+
+	var tab *browser.Session
+	lo.keep = &tab
+	if _, err := a.login(cmd, b, site, s, acct, lo); err != nil {
+		return nil, err
+	}
+	defer tab.Close()
+	startID, err := latestID(cmd.Context(), b)
+	if err != nil {
+		return nil, err
+	}
+	marks := []authmatrix.Mark{{Action: "Home", FromID: startID}}
+	_, err = a.crawlNav(cmd, tab, s, crawlOptions{selector: o.selector, depth: o.depth, maxLinks: o.maxLinks, filter: o.filter,
+		timeout: o.timeout, settle: o.settle, visit: true, label: label,
+		before: func(path []string) error {
+			id, err := latestID(cmd.Context(), b)
+			if err != nil {
+				return err
+			}
+			marks = append(marks, authmatrix.Mark{Action: authmatrix.ActionName(path), FromID: id})
+			return nil
+		}})
+	if err != nil {
+		return nil, err
+	}
+	return a.finishRecording(cmd, b, site, role, r.Level, acct.Name, startID, lo.listener, marks, o.filter)
 }
 
 // excluded reports whether a link matches the site's exclude patterns (logout is always excluded).
@@ -237,6 +352,8 @@ type crawlOptions struct {
 	visit bool
 	// before runs just before each link is opened, with its menu path.
 	before func(path []string) error
+	// label prefixes progress lines (the account, when recording in parallel).
+	label string
 }
 
 // crawlNav maps the site's nav breadth-first from the base URL. Links found
@@ -275,7 +392,7 @@ func (a *app) crawlNav(cmd *cobra.Command, tab *browser.Session, s *config.Site,
 				return nil, err
 			}
 		}
-		fmt.Fprintf(os.Stderr, "hiccup: [%d/%d] %s -> %s\n", i+1, len(queue), authmatrix.ActionName(it.Path), it.Href)
+		fmt.Fprintf(os.Stderr, "hiccup: [%s%d/%d] %s -> %s\n", o.label, i+1, len(queue), authmatrix.ActionName(it.Path), it.Href)
 		if _, err := tab.Navigate(it.Href, o.timeout); err != nil {
 			fmt.Fprintf(os.Stderr, "hiccup:   %v\n", err)
 			continue
@@ -306,39 +423,37 @@ func pause(s *config.Site, settle time.Duration) {
 	time.Sleep(d)
 }
 
-func (a *app) finishRecording(cmd *cobra.Command, b proxy.Proxy, site, role string, level int, account string, startID int, marks []authmatrix.Mark, f authmatrix.Filter) error {
-	items, err := b.History(cmd.Context(), proxy.HistoryQuery{Since: startID, Limit: 100000})
+// finishRecording turns proxy history since startID into the account's
+// recording. With listener > 0 only requests from that listener count.
+func (a *app) finishRecording(cmd *cobra.Command, b proxy.Proxy, site, role string, level int, account string, startID, listener int, marks []authmatrix.Mark, f authmatrix.Filter) (*recordResult, error) {
+	items, err := b.History(cmd.Context(), proxy.HistoryQuery{Since: startID, Limit: 100000, Listener: listener})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	rec := &authmatrix.Recording{Site: site, Account: account, Role: role, Level: level, Created: time.Now().UTC(),
 		Actions: authmatrix.Build(items, marks, f)}
 	if err := authmatrix.SaveRecording(rec); err != nil {
-		return err
+		return nil, err
 	}
-	type row struct {
-		Action   string `json:"action"`
-		Requests int    `json:"requests"`
-		Example  string `json:"example"`
-	}
-	var rows []row
+	res := &recordResult{}
 	for _, act := range rec.Actions {
-		rows = append(rows, row{act.Name, len(act.Requests), act.Requests[0].Key()})
+		res.rows = append(res.rows, recordRow{account, act.Name, len(act.Requests), act.Requests[0].Key()})
 	}
-	return a.print(rows, "action", "requests", "example")
+	return res, nil
 }
 
 func (a *app) matrixMarkCmd() *cobra.Command {
-	return &cobra.Command{
+	var as string
+	cmd := &cobra.Command{
 		Use:   "mark <action>",
-		Short: "Manual recording: requests from now on belong to this action",
+		Short: "Manual recording: requests from now on belong to this action (--as when several accounts record)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			site, _, err := a.cfg.Site(a.site)
 			if err != nil {
 				return err
 			}
-			st, err := authmatrix.LoadState(site)
+			st, err := authmatrix.LoadState(site, as)
 			if err != nil {
 				return err
 			}
@@ -354,28 +469,39 @@ func (a *app) matrixMarkCmd() *cobra.Command {
 			if err := authmatrix.SaveState(st); err != nil {
 				return err
 			}
-			return a.print(map[string]any{"action": args[0], "from_id": id})
+			return a.print(map[string]any{"account": st.Account, "action": args[0], "from_id": id})
 		},
 	}
+	cmd.Flags().StringVar(&as, "as", "", "the account whose recording to mark")
+	return cmd
 }
 
 func (a *app) matrixStopCmd() *cobra.Command {
-	return &cobra.Command{
+	var as string
+	var all bool
+	cmd := &cobra.Command{
 		Use:   "stop",
-		Short: "Manual recording: finish and save the recording",
+		Short: "Manual recording: finish and save the recording (--as one account, --all every one)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			site, s, err := a.cfg.Site(a.site)
 			if err != nil {
 				return err
 			}
-			st, err := authmatrix.LoadState(site)
-			if err != nil {
-				return err
-			}
-			role, r, _, ok := s.FindAccount(st.Account)
-			if !ok {
-				return fmt.Errorf("account %q is no longer in the config", st.Account)
+			var states []*authmatrix.State
+			if all {
+				if states, err = authmatrix.States(site); err != nil {
+					return err
+				}
+				if len(states) == 0 {
+					return fmt.Errorf("no recordings in progress for %s", site)
+				}
+			} else {
+				st, err := authmatrix.LoadState(site, as)
+				if err != nil {
+					return err
+				}
+				states = []*authmatrix.State{st}
 			}
 			b, err := a.proxyClient()
 			if err != nil {
@@ -385,12 +511,28 @@ func (a *app) matrixStopCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := a.finishRecording(cmd, b, site, role, r.Level, st.Account, st.StartID, st.Marks, f); err != nil {
-				return err
+			var rows []recordRow
+			for _, st := range states {
+				role, r, _, ok := s.FindAccount(st.Account)
+				if !ok {
+					return fmt.Errorf("account %q is no longer in the config", st.Account)
+				}
+				res, err := a.finishRecording(cmd, b, site, role, r.Level, st.Account, st.StartID, st.ListenerPort, st.Marks, f)
+				if err != nil {
+					return err
+				}
+				if err := authmatrix.ClearState(st); err != nil {
+					return err
+				}
+				rows = append(rows, res.rows...)
 			}
-			return authmatrix.ClearState(site)
+			return a.printRecording(&recordResult{rows: rows}, len(states) > 1)
 		},
 	}
+	cmd.Flags().StringVar(&as, "as", "", "the account whose recording to finish")
+	cmd.Flags().BoolVar(&all, "all", false, "finish every recording in progress")
+	cmd.MarkFlagsMutuallyExclusive("as", "all")
+	return cmd
 }
 
 func (a *app) matrixRunCmd() *cobra.Command {
