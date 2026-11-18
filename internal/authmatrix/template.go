@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -91,4 +92,29 @@ func Template(rawURL string) (tmpl string, objectRef bool) {
 		tmpl += "?" + strings.Join(parts, "&")
 	}
 	return tmpl, objectRef
+}
+
+// ActionSeparator joins the levels of a menu path in action names.
+const ActionSeparator = " -> "
+
+// ActionName names an action after its menu path: "Content -> Scheduled content".
+func ActionName(path []string) string { return strings.Join(path, ActionSeparator) }
+
+// JoinPath appends a link's menu path to the path of the page it was found
+// on, without repeating labels the two share: on the "Content" page, a
+// link whose own path is ["Content", "Scheduled content"] (or just
+// ["Scheduled content"]) becomes ["Content", "Scheduled content"].
+func JoinPath(parent, child []string) []string {
+	overlap := 0
+	for k := min(len(parent), len(child)); k > 0; k-- {
+		if slices.EqualFunc(parent[len(parent)-k:], child[:k], strings.EqualFold) {
+			overlap = k
+			break
+		}
+	}
+	out := append(append([]string{}, parent...), child[overlap:]...)
+	if len(out) == 0 {
+		return child
+	}
+	return out
 }

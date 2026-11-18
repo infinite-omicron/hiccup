@@ -22,7 +22,7 @@ import (
 	"github.com/infinite-omicron/hiccup/internal/session"
 )
 
-const defaultNavSelector = "nav a, [role=navigation] a, [role=menu] a, aside a"
+const defaultNavSelector = "nav a, [role=navigation] a, [role=menu] a, [role=menubar] a, [role=tablist] a, aside a"
 
 func (a *app) matrixCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -33,7 +33,7 @@ func (a *app) matrixCmd() *cobra.Command {
 			"3. hiccup matrix run                    (replays recorded requests as each account)\n" +
 			"4. hiccup matrix export --xlsx out.xlsx --burp-issues",
 	}
-	cmd.AddCommand(a.matrixRecordCmd(), a.matrixMarkCmd(), a.matrixStopCmd(), a.matrixRunCmd(), a.matrixShowCmd(), a.matrixExportCmd())
+	cmd.AddCommand(a.matrixMapCmd(), a.matrixRecordCmd(), a.matrixMarkCmd(), a.matrixStopCmd(), a.matrixRunCmd(), a.matrixShowCmd(), a.matrixExportCmd())
 	return cmd
 }
 
@@ -52,17 +52,90 @@ func (a *app) filter(s *config.Site) (authmatrix.Filter, error) {
 	return f, nil
 }
 
+func (a *app) matrixMapCmd() *cobra.Command {
+	var as, selector string
+	var depth, maxLinks int
+	var timeout, settle time.Duration
+	cmd := &cobra.Command{
+		Use:   "map --as <account>",
+		Short: "Show the site's nav as menu paths, as an account sees it, without recording",
+		Long: "Logs in as the account and reads the nav from the browser, including submenus. With the\n" +
+			"default --depth 1 it only reads the landing page; --depth 2 or more also opens each link to\n" +
+			"find the nav that appears there (which follows GET links, like recording does).",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			site, s, err := a.cfg.Site(a.site)
+			if err != nil {
+				return err
+			}
+			_, _, acct, ok := s.FindAccount(as)
+			if !ok {
+				return fmt.Errorf("no account %q in site %s", as, site)
+			}
+			b, err := a.proxyClient()
+			if err != nil {
+				return err
+			}
+			if _, err := a.applySites(cmd.Context(), b); err != nil {
+				return err
+			}
+			f, err := a.filter(s)
+			if err != nil {
+				return err
+			}
+			var tab *browser.Session
+			if _, err := a.login(cmd, b, site, s, acct, loginOptions{timeout: timeout, keep: &tab}); err != nil {
+				return err
+			}
+			defer tab.Close()
+			if selector == "" {
+				selector = s.NavSelector
+			}
+			if selector == "" {
+				selector = defaultNavSelector
+			}
+			links, err := a.crawlNav(cmd, tab, s, crawlOptions{selector: selector, depth: depth, maxLinks: maxLinks,
+				filter: f, timeout: timeout, settle: settle, visit: depth > 1})
+			if err != nil {
+				return err
+			}
+			type row struct {
+				Action string   `json:"action"`
+				Path   []string `json:"path"`
+				URL    string   `json:"url"`
+			}
+			rows := []row{}
+			for _, l := range links {
+				rows = append(rows, row{authmatrix.ActionName(l.Path), l.Path, l.Href})
+			}
+			return a.print(rows, "action", "url")
+		},
+	}
+	cmd.Flags().StringVar(&as, "as", "", "account to map the nav as (required)")
+	cmd.Flags().StringVar(&selector, "selector", "", "CSS selector for nav links (default: site nav_selector or common nav containers)")
+	cmd.Flags().IntVar(&depth, "depth", 1, "1 reads the landing page only; 2 or more also opens each link")
+	cmd.Flags().IntVar(&maxLinks, "max-links", 100, "maximum nav links")
+	cmd.Flags().DurationVar(&timeout, "timeout", 60*time.Second, "login and page load timeout")
+	cmd.Flags().DurationVar(&settle, "settle", time.Second, "wait after each page load")
+	_ = cmd.MarkFlagRequired("as")
+	return cmd
+}
+
 func (a *app) matrixRecordCmd() *cobra.Command {
 	var as, selector string
 	var manual bool
 	var settle, timeout time.Duration
-	var maxLinks int
+	var maxLinks, depth int
 	cmd := &cobra.Command{
 		Use:   "record --as <account>",
 		Short: "Log in as an account and record the requests each nav action makes",
-		Long: "Auto mode logs in (fresh browser context), opens the base URL, and clicks every nav link,\n" +
-			"naming each action after the link text. Manual mode logs in and lets you browse; run\n" +
-			"`hiccup matrix mark \"<action>\"` before each action and `hiccup matrix stop` at the end.",
+		Long: "Auto mode logs in (fresh browser context), maps the site's nav from the browser, including\n" +
+			"submenus, and opens every link. Each action is named after its menu path, e.g.\n" +
+			"\"Content -> Scheduled content\". With --depth 2 or more it also follows nav links that appear\n" +
+			"on those pages. Preview the paths with `hiccup matrix map`. GET links that do something\n" +
+			"(e.g. flush caches) are followed too: add them to the site's exclude list to skip them.\n\n" +
+			"Manual mode logs in and lets you browse; run `hiccup matrix mark \"<action>\"` before each\n" +
+			"action and `hiccup matrix stop` at the end.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			site, s, err := a.cfg.Site(a.site)
@@ -118,26 +191,18 @@ func (a *app) matrixRecordCmd() *cobra.Command {
 				return err
 			}
 			marks := []authmatrix.Mark{{Action: "Home", FromID: startID}}
-			if _, err := tab.Navigate(s.BaseURL, timeout); err != nil {
-				return err
-			}
-			pause(s, settle)
-			links, err := tab.Links(selector)
+			_, err = a.crawlNav(cmd, tab, s, crawlOptions{selector: selector, depth: depth, maxLinks: maxLinks, filter: f,
+				timeout: timeout, settle: settle, visit: true,
+				before: func(path []string) error {
+					id, err := latestID(cmd.Context(), b)
+					if err != nil {
+						return err
+					}
+					marks = append(marks, authmatrix.Mark{Action: authmatrix.ActionName(path), FromID: id})
+					return nil
+				}})
 			if err != nil {
 				return err
-			}
-			links = keepLinks(links, f, maxLinks)
-			for i, l := range links {
-				id, err := latestID(cmd.Context(), b)
-				if err != nil {
-					return err
-				}
-				marks = append(marks, authmatrix.Mark{Action: l.Text, FromID: id})
-				fmt.Fprintf(os.Stderr, "hiccup: [%d/%d] %s → %s\n", i+1, len(links), l.Text, l.Href)
-				if _, err := tab.Navigate(l.Href, timeout); err != nil {
-					fmt.Fprintf(os.Stderr, "hiccup:   %v\n", err)
-				}
-				pause(s, settle)
 			}
 			return a.finishRecording(cmd, b, site, role, r.Level, acct.Name, startID, marks, f)
 		},
@@ -147,26 +212,88 @@ func (a *app) matrixRecordCmd() *cobra.Command {
 	cmd.Flags().StringVar(&selector, "selector", "", "CSS selector for nav links (default: site nav_selector or common nav containers)")
 	cmd.Flags().DurationVar(&settle, "settle", time.Second, "wait after each page load for background requests")
 	cmd.Flags().DurationVar(&timeout, "timeout", 60*time.Second, "login and page load timeout")
-	cmd.Flags().IntVar(&maxLinks, "max-links", 50, "maximum nav links to follow")
+	cmd.Flags().IntVar(&maxLinks, "max-links", 100, "maximum nav links to follow")
+	cmd.Flags().IntVar(&depth, "depth", 2, "1 follows the landing page's nav; 2 also follows nav links that appear on those pages (tabs, section menus); and so on")
 	_ = cmd.MarkFlagRequired("as")
 	return cmd
 }
 
-// keepLinks drops links that must not be visited (logout, excluded) and caps the count.
-func keepLinks(links []browser.Link, f authmatrix.Filter, limit int) []browser.Link {
-	var out []browser.Link
-	for _, l := range links {
-		skip := false
-		for _, re := range f.Exclude {
-			if re.MatchString(l.Href) || re.MatchString(l.Text) {
-				skip = true
-			}
-		}
-		if !skip && len(out) < limit {
-			out = append(out, l)
+// excluded reports whether a link matches the site's exclude patterns (logout is always excluded).
+func excluded(l browser.Link, f authmatrix.Filter) bool {
+	for _, re := range f.Exclude {
+		if re.MatchString(l.Href) || re.MatchString(l.Text) || re.MatchString(authmatrix.ActionName(l.Path)) {
+			return true
 		}
 	}
-	return out
+	return false
+}
+
+type crawlOptions struct {
+	selector        string
+	depth, maxLinks int
+	filter          authmatrix.Filter
+	timeout, settle time.Duration
+	// visit opens every link; without it only the landing page's nav is read.
+	visit bool
+	// before runs just before each link is opened, with its menu path.
+	before func(path []string) error
+}
+
+// crawlNav maps the site's nav breadth-first from the base URL. Links found
+// on a page that weren't seen before (its tabs or section menu) are named
+// under that page's path. It returns every link it found, in order.
+func (a *app) crawlNav(cmd *cobra.Command, tab *browser.Session, s *config.Site, o crawlOptions) ([]browser.Link, error) {
+	type item struct {
+		browser.Link
+		depth int
+	}
+	if _, err := tab.Navigate(s.BaseURL, o.timeout); err != nil {
+		return nil, err
+	}
+	pause(s, o.settle)
+	seen := map[string]bool{}
+	var queue []item
+	enqueue := func(parent []string, links []browser.Link, depth int) {
+		for _, l := range links {
+			if seen[l.Href] || excluded(l, o.filter) || len(queue) >= o.maxLinks {
+				continue
+			}
+			seen[l.Href] = true
+			l.Path = authmatrix.JoinPath(parent, l.Path)
+			queue = append(queue, item{l, depth})
+		}
+	}
+	links, err := tab.Links(o.selector)
+	if err != nil {
+		return nil, err
+	}
+	enqueue(nil, links, 1)
+	for i := 0; o.visit && i < len(queue); i++ {
+		it := queue[i]
+		if o.before != nil {
+			if err := o.before(it.Path); err != nil {
+				return nil, err
+			}
+		}
+		fmt.Fprintf(os.Stderr, "hiccup: [%d/%d] %s → %s\n", i+1, len(queue), authmatrix.ActionName(it.Path), it.Href)
+		if _, err := tab.Navigate(it.Href, o.timeout); err != nil {
+			fmt.Fprintf(os.Stderr, "hiccup:   %v\n", err)
+			continue
+		}
+		pause(s, o.settle)
+		if it.depth < o.depth {
+			more, err := tab.Links(o.selector)
+			if err != nil {
+				return nil, err
+			}
+			enqueue(it.Path, more, it.depth+1)
+		}
+	}
+	out := make([]browser.Link, len(queue))
+	for i, it := range queue {
+		out[i] = it.Link
+	}
+	return out, nil
 }
 
 // pause waits settle plus the site's throttle jitter, so crawling looks human-paced.
