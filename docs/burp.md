@@ -45,11 +45,14 @@ hiccup repeater -u https://target.test/admin --tab admin
 hiccup intruder --raw req.txt --host target.test
 hiccup intercept off                                    # or on; no argument shows the state
 hiccup scope add                                        # the site's scope from config
+hiccup scope add target.test                            # a bare host means https:// and http://
 hiccup scan audit https://target.test/                  # Burp Pro only (exit code 3 otherwise)
 hiccup issues list
 hiccup issues add --name "IDOR on /docs" --url https://target.test/docs/1 --severity high
 hiccup burp install-ext ./ext.jar                       # loads into the running Burp
 ```
+
+Scope takes hosts or URLs. A bare host (`target.test`, `target.test:8443`) adds both `https://` and `http://`; a URL keeps its scheme. Burp's scope API only takes URL prefixes, so wildcards like `*.target.test` are rejected: add each host instead.
 
 `hiccup send` goes through Burp, so it is throttled and appears in Burp's Logger, but not in Proxy history.
 

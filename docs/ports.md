@@ -34,5 +34,5 @@ hiccup browser cdp         # CDP endpoint, websocket URL and Burp's CDP token
 
 If a port is taken, the component that wants it fails to start and says so:
 
-- **8099:** the extension logs `cannot listen on 127.0.0.1:8099` in its Errors tab.
+- **8099:** the extension logs `cannot listen on 127.0.0.1:8099` in its Errors tab. This happens when two Burps load hiccup at once, for example your GUI Burp plus a headless one from `hiccup burp start`. Give the second one its own port, e.g. `HICCUP_BURP_PORT=8199 hiccup burp start --headless`, and use a separate `HICCUP_HOME` so the two `burp.json` files don't overwrite each other.
 - **9222:** the browser can't open its CDP port, so `hiccup browser launch` returns no websocket URL, or (with ZAP and mitmproxy) says the browser never reported its DevTools address. Pass `--port`.
