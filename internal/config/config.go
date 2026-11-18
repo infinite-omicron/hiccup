@@ -17,7 +17,14 @@ import (
 type Config struct {
 	Backend string           `json:"backend,omitempty"`
 	Burp    Burp             `json:"burp"`
+	Matrix  *Matrix          `json:"matrix,omitempty"`
 	Sites   map[string]*Site `json:"sites,omitempty"`
+}
+
+// Matrix says where `hiccup matrix export --xlsx` takes its layout from.
+type Matrix struct {
+	Template string `json:"template,omitempty"` // e.g. ~/.hiccup/Checklist.xltx
+	Sheet    string `json:"sheet,omitempty"`    // default "Auth Matrix"
 }
 
 type Burp struct {
@@ -35,6 +42,10 @@ type Site struct {
 	Login     *Login           `json:"login,omitempty"`
 	Session   *Session         `json:"session,omitempty"`
 	Roles     map[string]*Role `json:"roles,omitempty"`
+	// NavSelector finds the links `matrix record` clicks; default "nav a, [role=navigation] a, [role=menu] a, aside a".
+	NavSelector string `json:"nav_selector,omitempty"`
+	// Exclude are URL regexes never recorded or replayed (logout is always excluded).
+	Exclude []string `json:"exclude,omitempty"`
 }
 
 type Throttle struct {
@@ -267,6 +278,30 @@ func (s *Site) Hosts() []string {
 	return hosts
 }
 
+// AccountRef is an account with its role, for iterating a site's accounts.
+type AccountRef struct {
+	Role    string
+	Level   int
+	Account *Account
+}
+
+// Accounts lists a site's accounts, highest level first, then by name.
+func (s *Site) Accounts() []AccountRef {
+	var out []AccountRef
+	for rn, r := range s.Roles {
+		for _, a := range r.Accounts {
+			out = append(out, AccountRef{Role: rn, Level: r.Level, Account: a})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Level != out[j].Level {
+			return out[i].Level > out[j].Level
+		}
+		return out[i].Account.Name < out[j].Account.Name
+	})
+	return out
+}
+
 // FindAccount looks an account up by name across all roles.
 func (s *Site) FindAccount(name string) (role string, r *Role, a *Account, ok bool) {
 	for rn, r := range s.Roles {
@@ -292,7 +327,8 @@ func Example() *Config {
 					Backoff: &Backoff{OnStatus: []int{429, 503}, HonorRetryAfter: true, MaxS: 120}},
 				Login: &Login{URL: "/login", Username: "#email", Password: "#password",
 					Submit: "button[type=submit]", Success: &LoginSuccess{URLContains: "/dashboard"}},
-				Session: &Session{Cookies: []string{"session"}, Headers: []string{"Authorization"}},
+				Session:     &Session{Cookies: []string{"session"}, Headers: []string{"Authorization"}},
+				NavSelector: "nav a",
 				Roles: map[string]*Role{
 					"admin": {Level: 100, Accounts: []*Account{{Name: "admin1", Username: "admin1@example.test", Password: "changeme"}}},
 					"user": {Level: 10, Accounts: []*Account{

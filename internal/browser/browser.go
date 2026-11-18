@@ -33,18 +33,29 @@ type Endpoint struct {
 	Token string
 }
 
+// AttachOptions choose the tab a Session drives.
+type AttachOptions struct {
+	// NewTab opens a new tab instead of attaching to the first page tab.
+	NewTab bool
+	// Isolated opens a new tab in a fresh browser context (its own cookies and
+	// storage), disposed when the Session closes. Use it to log several
+	// accounts in without them sharing a session.
+	Isolated bool
+}
+
 // Attach connects to the browser and attaches to the first page tab, or opens
-// a new tab when newTab is set or none exists.
-func Attach(ctx context.Context, ep Endpoint, newTab bool) (*Session, error) {
+// a new tab per opts. Closing the Session detaches and leaves the tab open,
+// except for an isolated tab, which is closed with its browser context.
+func Attach(ctx context.Context, ep Endpoint, opts AttachOptions) (*Session, error) {
 	h := http.Header{}
 	if ep.Token != "" {
 		h.Set(AuthHeader, ep.Token)
 	}
-	cdpURL, opts := ep.HTTP, []remote.Option{remote.WithDialHTTPHeader(h)}
+	cdpURL, ropts := ep.HTTP, []remote.Option{remote.WithDialHTTPHeader(h)}
 	if ep.WS != "" {
-		cdpURL, opts = ep.WS, append(opts, remote.NoModifyURL)
+		cdpURL, ropts = ep.WS, append(ropts, remote.NoModifyURL)
 	}
-	alloc, cancelAlloc := remote.NewAllocator(ctx, cdpURL, opts...)
+	alloc, cancelAlloc := remote.NewAllocator(ctx, cdpURL, ropts...)
 	root, cancelRoot := chromedp.NewContext(alloc)
 	cancel := func() { cancelRoot(); cancelAlloc() }
 
@@ -53,8 +64,14 @@ func Attach(ctx context.Context, ep Endpoint, newTab bool) (*Session, error) {
 		cancel()
 		return nil, fmt.Errorf("cdp %s: %w", cdpURL, err)
 	}
-	tabOpts := []chromedp.ContextOption{chromedp.WithDetachOnCancel()}
-	if !newTab {
+	var tabOpts []chromedp.ContextOption
+	switch {
+	case opts.Isolated:
+		tabOpts = append(tabOpts, chromedp.WithNewBrowserContext())
+	default:
+		tabOpts = append(tabOpts, chromedp.WithDetachOnCancel())
+	}
+	if !opts.NewTab && !opts.Isolated {
 		for _, t := range targets {
 			if t.Type == "page" {
 				tabOpts = append(tabOpts, chromedp.WithTargetID(t.TargetID))

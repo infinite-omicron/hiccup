@@ -119,7 +119,7 @@ func (a *app) browserCmd() *cobra.Command {
 			}
 			return browser.Relay(cmd.Context(), relayAddr, ep, func(addr string) {
 				_ = a.print(map[string]string{"relay": "http://" + addr, "upstream": ep.HTTP,
-					"selenium": "options.debugger_address = \"" + addr + "\"",
+					"selenium":   "options.debugger_address = \"" + addr + "\"",
 					"playwright": "chromium.connect_over_cdp(\"http://" + addr + "\")"})
 			})
 		},
@@ -233,7 +233,7 @@ func (a *app) withTab(newTab *bool, fn func(*browser.Session, []string) (any, er
 		if err != nil {
 			return err
 		}
-		s, err := browser.Attach(cmd.Context(), ep, *newTab)
+		s, err := browser.Attach(cmd.Context(), ep, browser.AttachOptions{NewTab: *newTab})
 		if err != nil {
 			return err
 		}

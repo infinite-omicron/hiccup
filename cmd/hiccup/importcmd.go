@@ -101,7 +101,9 @@ func (a *app) runNuclei(cmd *cobra.Command, args []string, noProxy, noImport boo
 	defer os.Remove(out.Name())
 
 	extra := []string{"-jsonl", "-o", out.Name(), "-duc"}
-	has := func(flags ...string) bool { return slices.ContainsFunc(args, func(s string) bool { return slices.Contains(flags, s) }) }
+	has := func(flags ...string) bool {
+		return slices.ContainsFunc(args, func(s string) bool { return slices.Contains(flags, s) })
+	}
 	if !noProxy && !has("-p", "-proxy") {
 		h, err := b.Health(cmd.Context())
 		if err != nil {
