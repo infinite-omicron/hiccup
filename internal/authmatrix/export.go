@@ -133,7 +133,7 @@ func (m *Matrix) Grid() *Grid {
 						line = fmt.Sprintf("%d %s", c.Status, c.Verdict)
 					}
 					if c.Finding != "" {
-						line = strings.ToUpper(c.Finding) + " - " + line
+						line = FindingLabel(c.Finding) + " - " + line
 					}
 					actual = append(actual, req+" -> "+line)
 					switch {
@@ -247,17 +247,29 @@ func (m *Matrix) WriteXLSX(path string, o XLSXOptions) error {
 	return os.Chmod(path, 0o600)
 }
 
+// FindingLabel is how a finding reads in workbooks and Burp issues. The
+// classification is a heuristic, so findings are worded as potential issues
+// to confirm by hand. JSON, CSV and `matrix run` keep the short codes.
+func FindingLabel(finding string) string {
+	switch finding {
+	case "vertical":
+		return "Potential vertical privilege escalation"
+	case "horizontal":
+		return "Potential horizontal privilege escalation (IDOR)"
+	case "forceful-browsing":
+		return "Potential unauthenticated access (forceful browsing)"
+	case "review":
+		return "Needs review"
+	}
+	return finding
+}
+
 // Issues turns findings into Burp issues, with the owner's and the other
 // account's request/response as evidence.
 func (m *Matrix) Issues() []proxy.Issue {
 	accounts := map[string]Account{}
 	for _, a := range m.Accounts {
 		accounts[a.Name] = a
-	}
-	titles := map[string]string{
-		"vertical":          "Vertical privilege escalation",
-		"horizontal":        "Horizontal privilege escalation (IDOR)",
-		"forceful-browsing": "Unauthenticated access (forceful browsing)",
 	}
 	var out []proxy.Issue
 	for _, f := range m.Findings(false) {
@@ -276,7 +288,7 @@ func (m *Matrix) Issues() []proxy.Issue {
 			html.EscapeString(f.Request.Recorder), html.EscapeString(f.Action),
 			f.Cell.Expected, html.EscapeString(f.Cell.Why), f.Cell.Verdict, html.EscapeString(f.Cell.Reason))
 		is := proxy.Issue{
-			Name:        titles[f.Cell.Finding],
+			Name:        FindingLabel(f.Cell.Finding),
 			URL:         f.Request.URL,
 			Severity:    "HIGH",
 			Confidence:  "TENTATIVE",

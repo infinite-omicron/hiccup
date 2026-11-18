@@ -83,10 +83,14 @@ Content -> Documents -> Shared        (a tab on the Documents page, found at --d
   - A reference to someone's object (`/documents/${document_id}`) is allowed only for accounts at a higher level.
   - Any other request is allowed for accounts at the recorder's level or above, or for any account at or above the level of someone who recorded it themselves.
   - Override any of these in `~/.hiccup/sites/<site>/expectations.json`, e.g. `{"Reports": {"user": "allow"}, "*": {"auditor": "deny"}}`.
-- **Findings:**
-  - `vertical`: a lower level got access.
-  - `horizontal`: the same level reached another account's object (IDOR).
-  - `forceful-browsing`: the anonymous account got access.
+- **Findings:** the classification is a heuristic, so workbooks and Burp issues word findings as *potential* issues to confirm by hand. JSON, CSV and `matrix run` use the short codes.
+
+  | Code | Wording | When |
+  |---|---|---|
+  | `vertical` | Potential vertical privilege escalation | a lower level got access |
+  | `horizontal` | Potential horizontal privilege escalation (IDOR) | the same level reached another account's object |
+  | `forceful-browsing` | Potential unauthenticated access (forceful browsing) | the anonymous account got access |
+  | `review` | Needs review | a 2xx that doesn't look like the owner's response |
 
 If an owner is denied its own recorded requests, `matrix run` warns that its session has probably expired.
 
