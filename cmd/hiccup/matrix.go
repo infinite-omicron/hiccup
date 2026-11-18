@@ -15,6 +15,7 @@ import (
 	"github.com/infinite-omicron/hiccup/internal/backend"
 	"github.com/infinite-omicron/hiccup/internal/browser"
 	"github.com/infinite-omicron/hiccup/internal/config"
+	"github.com/infinite-omicron/hiccup/internal/gsheets"
 	"github.com/infinite-omicron/hiccup/internal/session"
 )
 
@@ -413,11 +414,11 @@ func (a *app) matrixShowCmd() *cobra.Command {
 }
 
 func (a *app) matrixExportCmd() *cobra.Command {
-	var xlsx, csvPath, jsonPath, template, sheet string
+	var xlsx, csvPath, jsonPath, template, sheet, sheets string
 	var burpIssues, full bool
 	cmd := &cobra.Command{
 		Use:   "export",
-		Short: "Export the last run to xlsx (your Checklist template), csv, json and/or Burp issues",
+		Short: "Export the last run to xlsx (your Checklist template), Google Sheets, csv, json and/or Burp issues",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			site, _, err := a.cfg.Site(a.site)
@@ -453,6 +454,20 @@ func (a *app) matrixExportCmd() *cobra.Command {
 				}
 				out["json"] = jsonPath
 			}
+			if sheets != "" {
+				if sheet == "" && a.cfg.Matrix != nil {
+					sheet = a.cfg.Matrix.Sheet
+				}
+				client, err := gsheets.Client(cmd.Context())
+				if err != nil {
+					return err
+				}
+				link, err := gsheets.Write(cmd.Context(), client, sheets, sheet, m)
+				if err != nil {
+					return err
+				}
+				out["sheets"] = link
+			}
 			if burpIssues {
 				b, err := a.be()
 				if err != nil {
@@ -465,14 +480,15 @@ func (a *app) matrixExportCmd() *cobra.Command {
 				out["burp_issues"] = n
 			}
 			if len(out) == 0 {
-				return fmt.Errorf("choose at least one of --xlsx, --csv, --json, --burp-issues")
+				return fmt.Errorf("choose at least one of --xlsx, --sheets, --csv, --json, --burp-issues")
 			}
 			return a.print(out)
 		},
 	}
 	cmd.Flags().StringVar(&xlsx, "xlsx", "", "write an xlsx workbook")
 	cmd.Flags().StringVar(&template, "template", "", "workbook to fill (default: config matrix.template), e.g. Checklist.xltx")
-	cmd.Flags().StringVar(&sheet, "sheet", "", `sheet to fill (default "Auth Matrix")`)
+	cmd.Flags().StringVar(&sheet, "sheet", "", `tab to fill in --xlsx/--sheets (default "Auth Matrix")`)
+	cmd.Flags().StringVar(&sheets, "sheets", "", "Google Sheet ID or URL to fill (see hiccup google)")
 	cmd.Flags().StringVar(&csvPath, "csv", "", "write a csv with one row per account and request")
 	cmd.Flags().StringVar(&jsonPath, "json", "", "write the matrix as json")
 	cmd.Flags().BoolVar(&full, "full", false, "json: include base64 requests and responses")

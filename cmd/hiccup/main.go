@@ -72,6 +72,7 @@ func main() {
 		a.matrixCmd(),
 		a.burpCmd(),
 		a.bappCmd(),
+		a.googleCmd(),
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
