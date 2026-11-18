@@ -25,13 +25,13 @@ dist: jar
 	done
 
 # Release assets in dist/release: one archive per platform (each holding a
-# binary named hiccup or hiccup.exe, plus the README), the extension jar, and
-# SHA-256 checksums.
+# binary named hiccup or hiccup.exe, hiccup-burp.jar and the README), the
+# extension jar on its own, and SHA-256 checksums.
 release: dist
 	@rm -rf dist/release && mkdir -p dist/release
 	@for p in $(PLATFORMS); do \
 		os=$${p%/*}; arch=$${p#*/}; name=hiccup_$(FILEVER)_$${os}_$${arch}; \
-		stage=dist/stage/$$name; rm -rf $$stage; mkdir -p $$stage; cp README.md $$stage/; \
+		stage=dist/stage/$$name; rm -rf $$stage; mkdir -p $$stage; cp README.md dist/hiccup-burp.jar $$stage/; \
 		if [ $$os = windows ]; then \
 			cp dist/hiccup-$$os-$$arch.exe $$stage/hiccup.exe; \
 			(cd dist/stage && zip -qr ../release/$$name.zip $$name); \

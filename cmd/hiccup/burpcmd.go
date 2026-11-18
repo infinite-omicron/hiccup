@@ -53,11 +53,11 @@ func (a *app) burpCmd() *cobra.Command {
 				jar = a.cfg.Burp.Jar
 			}
 			if jar == "" {
-				jar = filepath.Join(config.Home(), "hiccup-burp.jar")
+				jar = defaultJar()
 			}
 			jar = expandHome(jar)
 			if _, err := os.Stat(jar); err != nil {
-				return fmt.Errorf("extension jar: %w (build it with `make jar` and copy to %s, or pass --jar)", err, jar)
+				return fmt.Errorf("extension jar: %w (run `make install`, put it in %s, or pass --jar)", err, config.Home())
 			}
 			java, burpJar, err := findBurp(install)
 			if err != nil {
@@ -149,7 +149,7 @@ func (a *app) burpCmd() *cobra.Command {
 			return a.print(out)
 		},
 	}
-	start.Flags().StringVar(&jar, "jar", "", "hiccup-burp.jar (default: config burp.jar or ~/.hiccup/hiccup-burp.jar)")
+	start.Flags().StringVar(&jar, "jar", "", "hiccup-burp.jar (default: config burp.jar, ~/.hiccup/hiccup-burp.jar, or the one next to the hiccup binary)")
 	start.Flags().StringVar(&install, "install-dir", "", "Burp install directory or burpsuite*.jar (default: auto-detect)")
 	start.Flags().BoolVar(&headless, "headless", false, "run Burp without a GUI")
 	start.Flags().BoolVar(&acceptEULA, "accept-eula", false, "headless only: answer Burp's EULA prompt with yes (you are accepting PortSwigger's licence)")
@@ -208,6 +208,25 @@ func (a *app) burpCmd() *cobra.Command {
 
 	cmd.AddCommand(start, stop, installExt)
 	return cmd
+}
+
+// defaultJar is ~/.hiccup/hiccup-burp.jar if present, else the jar shipped
+// next to the hiccup binary (release archives and the Homebrew cask).
+func defaultJar() string {
+	home := filepath.Join(config.Home(), "hiccup-burp.jar")
+	if _, err := os.Stat(home); err == nil {
+		return home
+	}
+	if exe, err := os.Executable(); err == nil {
+		if real, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = real
+		}
+		bundled := filepath.Join(filepath.Dir(exe), "hiccup-burp.jar")
+		if _, err := os.Stat(bundled); err == nil {
+			return bundled
+		}
+	}
+	return home
 }
 
 func expandHome(p string) string {
