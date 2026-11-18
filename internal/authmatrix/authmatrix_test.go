@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -246,5 +247,24 @@ func TestRunAndExport(t *testing.T) {
 	var csvBuf bytes.Buffer
 	if err := m.WriteCSV(&csvBuf); err != nil || strings.Count(csvBuf.String(), "\n") != 1+3*4 {
 		t.Errorf("csv rows: %d %v", strings.Count(csvBuf.String(), "\n"), err)
+	}
+}
+
+func TestJoinPath(t *testing.T) {
+	cases := []struct{ parent, child, want []string }{
+		{nil, []string{"Content", "Scheduled content"}, []string{"Content", "Scheduled content"}},
+		{[]string{"Content"}, []string{"Scheduled content"}, []string{"Content", "Scheduled content"}},
+		{[]string{"Content"}, []string{"Content", "Scheduled content"}, []string{"Content", "Scheduled content"}},
+		{[]string{"Manage", "Content"}, []string{"Manage", "Content", "Comments"}, []string{"Manage", "Content", "Comments"}},
+		{[]string{"Flush all caches"}, []string{"flush all caches", "Flush CSS and JavaScript"}, []string{"Flush all caches", "Flush CSS and JavaScript"}},
+		{[]string{"Documents"}, []string{"Admin", "Users"}, []string{"Documents", "Admin", "Users"}},
+	}
+	for _, c := range cases {
+		if got := JoinPath(c.parent, c.child); !slices.Equal(got, c.want) {
+			t.Errorf("JoinPath(%q, %q) = %q, want %q", c.parent, c.child, got, c.want)
+		}
+	}
+	if got := ActionName([]string{"Content", "Scheduled content"}); got != "Content -> Scheduled content" {
+		t.Errorf("ActionName = %q", got)
 	}
 }
