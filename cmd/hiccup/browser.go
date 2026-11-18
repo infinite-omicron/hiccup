@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/infinite-omicron/hiccup/internal/browser"
+	"github.com/infinite-omicron/hiccup/internal/config"
 	"github.com/infinite-omicron/hiccup/internal/proxy"
 )
 
@@ -30,19 +31,27 @@ func (a *app) statusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			br, err := b.BrowserStatus(cmd.Context())
+			br, err := b.BrowserStatus(cmd.Context(), "")
 			if err != nil {
 				return err
 			}
-			return a.print(map[string]any{"proxy": a.cfg.ProxyName(), "health": h, "browser": br, "applied": applied})
+			out := map[string]any{"proxy": a.cfg.ProxyName(), "health": h, "browser": br, "applied": applied}
+			if all, err := b.Browsers(cmd.Context()); err == nil && len(all) > 0 {
+				out["browsers"] = all
+			}
+			return a.print(out)
 		},
 	}
 }
 
 func (a *app) browserCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "browser", Short: "Launch and drive Burp's browser over CDP"}
+	cmd := &cobra.Command{Use: "browser", Short: "Launch and drive Burp's browser over CDP (Chrome DevTools Protocol)",
+		Long: "--as <account> uses that account's own browser, on its own Burp proxy listener (see\n" +
+			"docs/auth-matrix.md, parallel accounts). Without it, commands use the default browser."}
+	cmd.PersistentFlags().StringVar(&a.browserAs, "as", "", "use this account's own browser and proxy listener")
 
 	var opts proxy.BrowserOptions
+	var all bool
 	launch := &cobra.Command{
 		Use:   "launch [url]",
 		Short: "Start Burp's bundled Chromium with a CDP port, proxied through Burp",
@@ -63,31 +72,90 @@ func (a *app) browserCmd() *cobra.Command {
 			} else if err := b.SetUserAgent(cmd.Context(), uaSetting(opts.UA, "browser")); err != nil {
 				return err
 			}
-			st, err := b.BrowserLaunch(cmd.Context(), opts)
-			if err != nil {
-				return err
+			accounts := []string{}
+			switch {
+			case all:
+				_, s, err := a.cfg.Site(a.site)
+				if err != nil {
+					return err
+				}
+				for _, r := range s.Accounts() {
+					accounts = append(accounts, r.Account.Name)
+				}
+			case a.browserAs != "":
+				accounts = append(accounts, a.browserAs)
+			default:
+				st, err := b.BrowserLaunch(cmd.Context(), opts)
+				if err != nil {
+					return err
+				}
+				return a.print(st)
 			}
-			return a.print(st)
+			var out []*proxy.BrowserStatus
+			for _, acct := range accounts {
+				o := opts
+				st, err := a.launchAccountBrowser(cmd, b, acct, o, cmd.Flags().Changed("port"))
+				if err != nil {
+					return fmt.Errorf("%s: %w", acct, err)
+				}
+				out = append(out, st)
+			}
+			if len(out) == 1 {
+				return a.print(out[0])
+			}
+			return a.print(out, "name", "proxy", "cdp", "running")
 		},
 	}
+	launch.Flags().BoolVar(&all, "all", false, "launch a browser for every account of the site, each on its own listener")
 	launch.Flags().IntVar(&opts.Port, "port", 9222, "CDP port")
 	launch.Flags().StringVar(&opts.UA, "ua", "", "User-Agent override (default: the site's user_agent)")
 	launch.Flags().BoolVar(&opts.Headless, "headless", false, "run headless")
 	launch.Flags().StringVar(&opts.Binary, "binary", "", "Chromium binary (default: Burp's bundled browser)")
 	launch.Flags().BoolVar(&opts.KeepIntercept, "keep-intercept", false, "leave Proxy intercept on (requests will wait for you to forward them)")
 
+	var stopAll bool
 	stop := &cobra.Command{
-		Use: "stop", Short: "Stop the launched browser", Args: cobra.NoArgs,
+		Use: "stop", Short: "Stop the launched browser (--as one account's, --all every browser)", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
-			st, err := b.BrowserStop(cmd.Context())
+			if !stopAll {
+				st, err := b.BrowserStop(cmd.Context(), a.browserAs)
+				if err != nil {
+					return err
+				}
+				return a.print(st)
+			}
+			running, err := b.Browsers(cmd.Context())
 			if err != nil {
 				return err
 			}
-			return a.print(st)
+			stopped := []string{}
+			for _, st := range running {
+				if _, err := b.BrowserStop(cmd.Context(), st.Name); err != nil {
+					return err
+				}
+				stopped = append(stopped, st.Name)
+			}
+			return a.print(map[string]any{"stopped": stopped})
+		},
+	}
+	stop.Flags().BoolVar(&stopAll, "all", false, "stop every browser hiccup launched")
+
+	list := &cobra.Command{
+		Use: "list", Short: "List the running browsers", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			b, err := a.proxyClient()
+			if err != nil {
+				return err
+			}
+			all, err := b.Browsers(cmd.Context())
+			if err != nil {
+				return err
+			}
+			return a.print(all, "name", "proxy", "cdp", "pid")
 		},
 	}
 
@@ -181,13 +249,16 @@ func (a *app) browserCmd() *cobra.Command {
 	for _, c := range []*cobra.Command{nav, eval, shot, html, info} {
 		c.Flags().BoolVar(&newTab, "new-tab", false, "open a new tab instead of using the current one")
 	}
-	cmd.AddCommand(launch, stop, cdp, relay, nav, eval, shot, html, info)
+	cmd.AddCommand(launch, stop, list, cdp, relay, nav, eval, shot, html, info)
 	return cmd
 }
 
 // cdp returns the DevTools endpoint of the browser the proxy launched, or
 // of any browser given by HICCUP_CDP_URL (http:// or ws://) and HICCUP_CDP_TOKEN.
-func (a *app) cdp(cmd *cobra.Command) (browser.Endpoint, error) {
+func (a *app) cdp(cmd *cobra.Command) (browser.Endpoint, error) { return a.cdpFor(cmd, a.browserAs) }
+
+// cdpFor returns the DevTools endpoint of a named browser ("" is the default one).
+func (a *app) cdpFor(cmd *cobra.Command, name string) (browser.Endpoint, error) {
 	if v := os.Getenv("HICCUP_CDP_URL"); v != "" {
 		ep := browser.Endpoint{HTTP: v, Token: os.Getenv("HICCUP_CDP_TOKEN")}
 		if strings.HasPrefix(v, "ws") {
@@ -199,11 +270,14 @@ func (a *app) cdp(cmd *cobra.Command) (browser.Endpoint, error) {
 	if err != nil {
 		return browser.Endpoint{}, err
 	}
-	st, err := b.BrowserStatus(cmd.Context())
+	st, err := b.BrowserStatus(cmd.Context(), name)
 	if err != nil {
 		return browser.Endpoint{}, err
 	}
 	if !st.Running {
+		if name != "" {
+			return browser.Endpoint{}, fmt.Errorf("%s's browser is not running (hiccup browser launch --as %s)", name, name)
+		}
 		return browser.Endpoint{}, fmt.Errorf("browser is not running (hiccup browser launch)")
 	}
 	return browser.Endpoint{HTTP: st.CDP, WS: st.WS, Token: st.Token}, nil
@@ -250,4 +324,26 @@ func (a *app) withTab(newTab *bool, fn func(*browser.Session, []string) (any, er
 		}
 		return a.print(out)
 	}
+}
+
+// launchAccountBrowser starts an account's own browser on its own proxy
+// listener (adding the listener first), so its traffic is attributable.
+// The CDP port is the listener port + config.CDPOffset unless portSet.
+func (a *app) launchAccountBrowser(cmd *cobra.Command, b proxy.Proxy, account string, o proxy.BrowserOptions, portSet bool) (*proxy.BrowserStatus, error) {
+	_, s, err := a.cfg.Site(a.site)
+	if err != nil {
+		return nil, err
+	}
+	if _, _, _, ok := s.FindAccount(account); !ok {
+		return nil, fmt.Errorf("no account %q in the site", account)
+	}
+	port := s.AccountPorts()[account]
+	if _, err := b.AddListeners(cmd.Context(), []int{port}); err != nil {
+		return nil, err
+	}
+	o.Name, o.ProxyPort = account, port
+	if !portSet {
+		o.Port = port + config.CDPOffset
+	}
+	return b.BrowserLaunch(cmd.Context(), o)
 }

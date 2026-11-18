@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -206,7 +207,48 @@ func (a *app) burpCmd() *cobra.Command {
 		},
 	}
 
-	cmd.AddCommand(start, stop, installExt)
+	var removeListeners, addSite bool
+	listeners := &cobra.Command{
+		Use:   "listeners",
+		Short: "List Burp's proxy listeners; add the site's per-account ones, or remove hiccup's",
+		Long: "hiccup adds a loopback listener per account for --parallel (listener_base, default 8181,\n" +
+			"or an account's proxy_port). They stay until removed: --remove deletes only the listeners\n" +
+			"hiccup added, never your own.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			b, err := a.proxyClient()
+			if err != nil {
+				return err
+			}
+			var ls []proxy.Listener
+			switch {
+			case removeListeners:
+				ls, err = b.RemoveListeners(cmd.Context(), nil)
+			case addSite:
+				_, s, serr := a.cfg.Site(a.site)
+				if serr != nil {
+					return serr
+				}
+				var ports []int
+				for _, p := range s.AccountPorts() {
+					ports = append(ports, p)
+				}
+				slices.Sort(ports)
+				ls, err = b.AddListeners(cmd.Context(), ports)
+			default:
+				ls, err = b.Listeners(cmd.Context())
+			}
+			if err != nil {
+				return err
+			}
+			return a.print(ls, "port", "listen_mode", "running", "hiccup")
+		},
+	}
+	listeners.Flags().BoolVar(&removeListeners, "remove", false, "remove every listener hiccup added")
+	listeners.Flags().BoolVar(&addSite, "add-site", false, "add a listener for every account of the site")
+	listeners.MarkFlagsMutuallyExclusive("remove", "add-site")
+
+	cmd.AddCommand(start, stop, installExt, listeners)
 	return cmd
 }
 

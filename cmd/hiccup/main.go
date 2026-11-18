@@ -30,7 +30,9 @@ type app struct {
 	burpURL string
 	token   string
 	cfg     *config.Config
-	proxy   proxy.Proxy
+	// browserAs is `browser --as`: the account whose own browser to use.
+	browserAs string
+	proxy     proxy.Proxy
 }
 
 func main() {

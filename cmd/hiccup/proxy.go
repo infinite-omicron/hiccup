@@ -16,6 +16,7 @@ import (
 
 func (a *app) historyCmd() *cobra.Command {
 	var q proxy.HistoryQuery
+	var as string
 	cmd := &cobra.Command{
 		Use:   "history",
 		Short: "List proxy history (newest last)",
@@ -25,17 +26,29 @@ func (a *app) historyCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if as != "" {
+				_, s, err := a.cfg.Site(a.site)
+				if err != nil {
+					return err
+				}
+				if _, _, _, ok := s.FindAccount(as); !ok {
+					return fmt.Errorf("no account %q in the site", as)
+				}
+				q.Listener = s.AccountPorts()[as]
+			}
 			rows, err := b.History(cmd.Context(), q)
 			if err != nil {
 				return err
 			}
-			return a.print(rows, "id", "method", "status", "length", "url")
+			return a.print(rows, "id", "listener_port", "method", "status", "length", "url")
 		},
 	}
 	cmd.Flags().StringVar(&q.Contains, "contains", "", "only URLs containing this text")
 	cmd.Flags().IntVar(&q.Since, "since", -1, "only items with id greater than this")
 	cmd.Flags().IntVar(&q.Limit, "limit", 100, "maximum items (most recent)")
 	cmd.Flags().BoolVar(&q.InScope, "in-scope", false, "only in-scope items")
+	cmd.Flags().StringVar(&as, "as", "", "only requests from this account's own browser (its proxy listener)")
+	cmd.Flags().IntVar(&q.Listener, "listener", 0, "only requests that came through this proxy listener port")
 
 	var raw bool
 	get := &cobra.Command{

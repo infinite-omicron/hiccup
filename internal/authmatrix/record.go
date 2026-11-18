@@ -52,16 +52,26 @@ type Recording struct {
 }
 
 // State is an in-progress recording (manual mode, between start and stop).
+// Each account has its own, so several can record at once (--parallel).
 type State struct {
 	Site    string `json:"site"`
 	Account string `json:"account"`
 	StartID int    `json:"start_id"`
 	Marks   []Mark `json:"marks"`
+	// ListenerPort limits the recording to requests from the account's own
+	// browser (--parallel); 0 takes every request.
+	ListenerPort int `json:"listener_port,omitempty"`
+	path         string
 }
 
 func Dir(site string) string { return filepath.Join(config.Home(), "sites", site) }
 
-func statePath(site string) string { return filepath.Join(Dir(site), "recording-state.json") }
+func statePath(site, account string) string {
+	return filepath.Join(Dir(site), "recording-state-"+account+".json")
+}
+
+// legacyStatePath is the single recording state of hiccup before --parallel.
+func legacyStatePath(site string) string { return filepath.Join(Dir(site), "recording-state.json") }
 
 func recordingPath(site, account string) string {
 	return filepath.Join(Dir(site), "recordings", account+".json")
@@ -86,19 +96,67 @@ func readJSON(p string, v any) error {
 	return json.Unmarshal(b, v)
 }
 
-func SaveState(s *State) error { return writeJSON(statePath(s.Site), s) }
-
-func LoadState(site string) (*State, error) {
-	var s State
-	if err := readJSON(statePath(site), &s); errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("no recording in progress for %s (hiccup matrix record %s --manual)", site, site)
-	} else if err != nil {
-		return nil, err
+func SaveState(s *State) error {
+	if s.path == "" {
+		s.path = statePath(s.Site, s.Account)
 	}
-	return &s, nil
+	return writeJSON(s.path, s)
 }
 
-func ClearState(site string) error { return os.Remove(statePath(site)) }
+// States returns every recording in progress for the site.
+func States(site string) ([]*State, error) {
+	files, err := filepath.Glob(filepath.Join(Dir(site), "recording-state-*.json"))
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(legacyStatePath(site)); err == nil {
+		files = append(files, legacyStatePath(site))
+	}
+	var out []*State
+	for _, f := range files {
+		var s State
+		if err := readJSON(f, &s); err != nil {
+			return nil, fmt.Errorf("%s: %w", f, err)
+		}
+		s.path = f
+		out = append(out, &s)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Account < out[j].Account })
+	return out, nil
+}
+
+// LoadState returns the account's recording in progress, or the only one when
+// account is "".
+func LoadState(site, account string) (*State, error) {
+	states, err := States(site)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, s := range states {
+		if s.Account == account {
+			return s, nil
+		}
+		names = append(names, s.Account)
+	}
+	switch {
+	case account == "" && len(states) == 1:
+		return states[0], nil
+	case account == "" && len(states) > 1:
+		return nil, fmt.Errorf("recordings in progress for %s: pass --as to pick one", strings.Join(names, ", "))
+	case account != "":
+		return nil, fmt.Errorf("no recording in progress for %s (hiccup matrix record --as %s --manual)", account, account)
+	}
+	return nil, fmt.Errorf("no recording in progress for %s (hiccup matrix record --as <account> --manual)", site)
+}
+
+func ClearState(s *State) error {
+	err := os.Remove(s.path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return err
+}
 
 func SaveRecording(r *Recording) error { return writeJSON(recordingPath(r.Site, r.Account), r) }
 
