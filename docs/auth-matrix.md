@@ -27,7 +27,8 @@ Each account logs in in its own browser context, so sessions never mix. If a rec
 ## Recording, replaying and exporting
 
 ```sh
-hiccup matrix record --as admin1          # log in, click every nav link; one action per link
+hiccup matrix map --as admin1             # preview: the site's nav as menu paths
+hiccup matrix record --as admin1          # log in and open every nav link; one action per menu path
 hiccup matrix record --as user1           # recording lower roles too improves the expectations
 hiccup login --all                        # fresh sessions for every account
 hiccup matrix run                         # replay every recorded request as every account
@@ -43,10 +44,30 @@ hiccup matrix mark "Create Document"        # requests from now on belong to thi
 hiccup matrix stop
 ```
 
+## Mapping the nav
+
+`hiccup matrix map --as <account>` logs in and reads the site's navigation from the browser, as that account sees it. Each link gets its **menu path**, which becomes the action's name:
+
+```
+Content -> Scheduled content
+Admin -> Flush all caches -> Flush CSS and JavaScript
+Help -> About
+Content -> Documents -> Shared        (a tab on the Documents page, found at --depth 2)
+```
+
+- **Submenus:** paths come from the menus around each link: nested lists (`<li>` inside `<li>`), `<details>`/`<summary>` menus, and buttons that open a menu with `aria-controls`. Links in submenus that only appear on hover are found too.
+- **Depth:**
+  - `map` reads only the landing page by default.
+  - `record` uses `--depth 2`: after opening each link, it also follows nav links that are new on that page, such as tabs or a section's own menu, and names them under that page's path.
+  - Use `--depth 3` or more for deeper sites. `--max-links` caps the total.
+- **Which links:** the default selector covers `nav`, `[role=navigation]`, `[role=menu]`, `[role=menubar]`, `[role=tablist]` and `aside`. Set the site's `nav_selector` to use your own, or pass `--selector`.
+
+**Links that do something:** recording (and `map --depth 2` or more) opens every link with a GET request. Some admin menus run an action on GET, for example Drupal's *Flush all caches*. To skip one, add a regex for its URL or menu path to the site's `exclude` list, e.g. `"exclude": ["/admin/flush", "Flush all caches"]`. Logout is always skipped.
+
 ## How it works
 
 - **Recording:**
-  - Requests are grouped into actions, named after the nav link text or your marks.
+  - Requests are grouped into actions, named after the link's menu path (e.g. `Content -> Scheduled content`) or your marks.
   - Object references in paths become templates: `/documents/42` → `/documents/${document_id}`.
   - Static files, out-of-scope hosts, login and logout are dropped. Add more with the site's `exclude` regexes; `nav_selector` chooses which links are clicked.
 - **Replay:**
@@ -92,7 +113,7 @@ If an owner is denied its own recorded requests, `matrix run` warns that its ses
 
 ## Test app
 
-`testdata/authapp/app.py` is a small multi-role app with one bug of each kind (horizontal, vertical, unauthenticated). hiccup reports exactly those bugs against it, and no false positives on the routes that are properly protected.
+`testdata/authapp/app.py` is a small multi-role app with one bug of each kind (horizontal, vertical, unauthenticated). Its nav has hover submenus, an ARIA menu button and page tabs, so `matrix map` should show the paths listed above. hiccup reports exactly those bugs against it, and no false positives on the routes that are properly protected.
 
 ```sh
 python3 testdata/authapp/app.py      # http://127.0.0.1:18081; accounts admin1, user1, user2 (password "pw")
