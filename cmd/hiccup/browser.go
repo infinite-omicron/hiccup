@@ -8,8 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/infinite-omicron/hiccup/internal/backend"
 	"github.com/infinite-omicron/hiccup/internal/browser"
+	"github.com/infinite-omicron/hiccup/internal/proxy"
 )
 
 func (a *app) statusCmd() *cobra.Command {
@@ -18,7 +18,7 @@ func (a *app) statusCmd() *cobra.Command {
 		Short: "Check the proxy connection and push site throttles/User-Agent",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -42,13 +42,13 @@ func (a *app) statusCmd() *cobra.Command {
 func (a *app) browserCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "browser", Short: "Launch and drive Burp's browser over CDP"}
 
-	var opts backend.BrowserOptions
+	var opts proxy.BrowserOptions
 	launch := &cobra.Command{
 		Use:   "launch [url]",
 		Short: "Start Burp's bundled Chromium with a CDP port, proxied through Burp",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -79,7 +79,7 @@ func (a *app) browserCmd() *cobra.Command {
 	stop := &cobra.Command{
 		Use: "stop", Short: "Stop the launched browser", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -185,7 +185,7 @@ func (a *app) browserCmd() *cobra.Command {
 	return cmd
 }
 
-// cdp returns the DevTools endpoint of the browser the backend launched, or
+// cdp returns the DevTools endpoint of the browser the proxy launched, or
 // of any browser given by HICCUP_CDP_URL (http:// or ws://) and HICCUP_CDP_TOKEN.
 func (a *app) cdp(cmd *cobra.Command) (browser.Endpoint, error) {
 	if v := os.Getenv("HICCUP_CDP_URL"); v != "" {
@@ -195,7 +195,7 @@ func (a *app) cdp(cmd *cobra.Command) (browser.Endpoint, error) {
 		}
 		return ep, nil
 	}
-	b, err := a.be()
+	b, err := a.proxyClient()
 	if err != nil {
 		return browser.Endpoint{}, err
 	}
@@ -210,7 +210,7 @@ func (a *app) cdp(cmd *cobra.Command) (browser.Endpoint, error) {
 }
 
 // tabUA is the UA a tab session should present: the site's, else the one the
-// backend holds (e.g. from `browser launch --ua`).
+// proxy holds (e.g. from `browser launch --ua`).
 func (a *app) tabUA(cmd *cobra.Command) string {
 	if ua := a.siteUA(); ua != "" {
 		return ua
@@ -218,7 +218,7 @@ func (a *app) tabUA(cmd *cobra.Command) string {
 	if os.Getenv("HICCUP_CDP_URL") != "" {
 		return ""
 	}
-	if b, err := a.be(); err == nil {
+	if b, err := a.proxyClient(); err == nil {
 		if ua, err := b.UserAgent(cmd.Context()); err == nil {
 			return ua.UA
 		}

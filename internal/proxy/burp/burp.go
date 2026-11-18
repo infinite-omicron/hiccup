@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/infinite-omicron/hiccup/internal/backend"
+	"github.com/infinite-omicron/hiccup/internal/proxy"
 )
 
 type Client struct {
@@ -23,7 +23,7 @@ type Client struct {
 	HTTP    *http.Client
 }
 
-var _ backend.Backend = (*Client)(nil)
+var _ proxy.Proxy = (*Client)(nil)
 
 func New(baseURL, token string) *Client {
 	// No timeout: throttled sends can legitimately block for a long time. Callers use ctx.
@@ -38,10 +38,10 @@ type APIError struct {
 
 func (e *APIError) Error() string { return fmt.Sprintf("%d: %s", e.Status, e.Message) }
 
-// Unwrap makes a 501 match backend.ErrUnsupported.
+// Unwrap makes a 501 match proxy.ErrUnsupported.
 func (e *APIError) Unwrap() error {
 	if e.Status == 501 {
-		return backend.ErrUnsupported
+		return proxy.ErrUnsupported
 	}
 	return nil
 }
@@ -92,21 +92,21 @@ func (c *Client) Health(ctx context.Context) (map[string]any, error) {
 	return m, c.do(ctx, "GET", "/health", nil, nil, &m)
 }
 
-func (c *Client) BrowserLaunch(ctx context.Context, o backend.BrowserOptions) (*backend.BrowserStatus, error) {
-	var s backend.BrowserStatus
+func (c *Client) BrowserLaunch(ctx context.Context, o proxy.BrowserOptions) (*proxy.BrowserStatus, error) {
+	var s proxy.BrowserStatus
 	if err := c.do(ctx, "POST", "/browser/launch", nil, o, &s); err != nil {
 		return nil, err
 	}
 	return &s, nil
 }
 
-func (c *Client) BrowserStatus(ctx context.Context) (*backend.BrowserStatus, error) {
-	var s backend.BrowserStatus
+func (c *Client) BrowserStatus(ctx context.Context) (*proxy.BrowserStatus, error) {
+	var s proxy.BrowserStatus
 	return &s, c.do(ctx, "GET", "/browser", nil, nil, &s)
 }
 
-func (c *Client) BrowserStop(ctx context.Context) (*backend.BrowserStatus, error) {
-	var s backend.BrowserStatus
+func (c *Client) BrowserStop(ctx context.Context) (*proxy.BrowserStatus, error) {
+	var s proxy.BrowserStatus
 	return &s, c.do(ctx, "POST", "/browser/stop", nil, nil, &s)
 }
 
@@ -120,7 +120,7 @@ func (c *Client) SetIntercept(ctx context.Context, enabled bool) (bool, error) {
 	return r.Enabled, c.do(ctx, "POST", "/proxy/intercept", nil, map[string]bool{"enabled": enabled}, &r)
 }
 
-func (c *Client) History(ctx context.Context, h backend.HistoryQuery) ([]backend.Summary, error) {
+func (c *Client) History(ctx context.Context, h proxy.HistoryQuery) ([]proxy.Summary, error) {
 	q := url.Values{}
 	if h.Contains != "" {
 		q.Set("contains", h.Contains)
@@ -134,19 +134,19 @@ func (c *Client) History(ctx context.Context, h backend.HistoryQuery) ([]backend
 	if h.InScope {
 		q.Set("in_scope", "true")
 	}
-	var out []backend.Summary
+	var out []proxy.Summary
 	return out, c.do(ctx, "GET", "/proxy/history", q, nil, &out)
 }
 
-func (c *Client) HistoryItem(ctx context.Context, id int) (*backend.Exchange, error) {
-	var e backend.Exchange
+func (c *Client) HistoryItem(ctx context.Context, id int) (*proxy.Exchange, error) {
+	var e proxy.Exchange
 	if err := c.do(ctx, "GET", "/proxy/history/"+strconv.Itoa(id), nil, nil, &e); err != nil {
 		return nil, err
 	}
 	return &e, nil
 }
 
-func (c *Client) SiteMap(ctx context.Context, prefix string, full bool) ([]backend.Exchange, error) {
+func (c *Client) SiteMap(ctx context.Context, prefix string, full bool) ([]proxy.Exchange, error) {
 	q := url.Values{}
 	if prefix != "" {
 		q.Set("prefix", prefix)
@@ -154,24 +154,24 @@ func (c *Client) SiteMap(ctx context.Context, prefix string, full bool) ([]backe
 	if full {
 		q.Set("full", "true")
 	}
-	var out []backend.Exchange
+	var out []proxy.Exchange
 	return out, c.do(ctx, "GET", "/sitemap", q, nil, &out)
 }
 
-func (c *Client) Send(ctx context.Context, reqs []backend.Request) ([]backend.Exchange, error) {
-	var out []backend.Exchange
+func (c *Client) Send(ctx context.Context, reqs []proxy.Request) ([]proxy.Exchange, error) {
+	var out []proxy.Exchange
 	return out, c.do(ctx, "POST", "/http/send", nil, map[string]any{"requests": reqs}, &out)
 }
 
-func (c *Client) SendToRepeater(ctx context.Context, r backend.Request, tab string) error {
+func (c *Client) SendToRepeater(ctx context.Context, r proxy.Request, tab string) error {
 	return c.do(ctx, "POST", "/repeater", nil, withTab(r, tab), nil)
 }
 
-func (c *Client) SendToIntruder(ctx context.Context, r backend.Request, tab string) error {
+func (c *Client) SendToIntruder(ctx context.Context, r proxy.Request, tab string) error {
 	return c.do(ctx, "POST", "/intruder", nil, withTab(r, tab), nil)
 }
 
-func withTab(r backend.Request, tab string) map[string]any {
+func withTab(r proxy.Request, tab string) map[string]any {
 	b, _ := json.Marshal(r)
 	var m map[string]any
 	_ = json.Unmarshal(b, &m)
@@ -185,16 +185,16 @@ func (c *Client) Scan(ctx context.Context, mode string, urls []string) error {
 	return c.do(ctx, "POST", "/scan", nil, map[string]any{"mode": mode, "urls": urls}, nil)
 }
 
-func (c *Client) Issues(ctx context.Context, prefix string) ([]backend.Issue, error) {
+func (c *Client) Issues(ctx context.Context, prefix string) ([]proxy.Issue, error) {
 	q := url.Values{}
 	if prefix != "" {
 		q.Set("prefix", prefix)
 	}
-	var out []backend.Issue
+	var out []proxy.Issue
 	return out, c.do(ctx, "GET", "/issues", q, nil, &out)
 }
 
-func (c *Client) AddIssues(ctx context.Context, issues []backend.Issue) (int, error) {
+func (c *Client) AddIssues(ctx context.Context, issues []proxy.Issue) (int, error) {
 	var r struct{ Added int }
 	return r.Added, c.do(ctx, "POST", "/issues", nil, issues, &r)
 }
@@ -210,13 +210,13 @@ func (c *Client) InScope(ctx context.Context, u string) (bool, error) {
 	return r.InScope, c.do(ctx, "GET", "/scope", url.Values{"url": {u}}, nil, &r)
 }
 
-func (c *Client) Throttle(ctx context.Context) ([]backend.ThrottleRule, error) {
-	var out []backend.ThrottleRule
+func (c *Client) Throttle(ctx context.Context) ([]proxy.ThrottleRule, error) {
+	var out []proxy.ThrottleRule
 	return out, c.do(ctx, "GET", "/throttle", nil, nil, &out)
 }
 
-func (c *Client) SetThrottle(ctx context.Context, rules []backend.ThrottleRule) ([]backend.ThrottleRule, error) {
-	var out []backend.ThrottleRule
+func (c *Client) SetThrottle(ctx context.Context, rules []proxy.ThrottleRule) ([]proxy.ThrottleRule, error) {
+	var out []proxy.ThrottleRule
 	return out, c.do(ctx, "POST", "/throttle", nil, rules, &out)
 }
 
@@ -224,20 +224,20 @@ func (c *Client) ClearThrottle(ctx context.Context) error {
 	return c.do(ctx, "DELETE", "/throttle", nil, nil, nil)
 }
 
-func (c *Client) UserAgent(ctx context.Context) (*backend.UserAgent, error) {
-	var ua backend.UserAgent
+func (c *Client) UserAgent(ctx context.Context) (*proxy.UserAgent, error) {
+	var ua proxy.UserAgent
 	if err := c.do(ctx, "GET", "/useragent", nil, nil, &ua); err != nil {
 		return nil, err
 	}
 	return &ua, nil
 }
 
-func (c *Client) SetUserAgent(ctx context.Context, ua backend.UserAgent) error {
+func (c *Client) SetUserAgent(ctx context.Context, ua proxy.UserAgent) error {
 	return c.do(ctx, "POST", "/useragent", nil, ua, nil)
 }
 
-func (c *Client) InstallExtensions(ctx context.Context, exts []backend.Extension) (*backend.InstallResult, error) {
-	var r backend.InstallResult
+func (c *Client) InstallExtensions(ctx context.Context, exts []proxy.Extension) (*proxy.InstallResult, error) {
+	var r proxy.InstallResult
 	if err := c.do(ctx, "POST", "/extensions/install", nil, map[string]any{"extensions": exts}, &r); err != nil {
 		return nil, err
 	}

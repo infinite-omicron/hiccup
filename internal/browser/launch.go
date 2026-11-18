@@ -13,16 +13,16 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/infinite-omicron/hiccup/internal/backend"
 	"github.com/infinite-omicron/hiccup/internal/config"
+	"github.com/infinite-omicron/hiccup/internal/proxy"
 )
 
-// Launcher starts a local Chromium-family browser proxied through a backend
+// Launcher starts a local Chromium-family browser proxied through a proxy
 // that has no browser of its own (ZAP, mitmproxy). State lives in
 // $HICCUP_HOME/browser-<name>.json so later CLI runs can find the browser.
 type Launcher struct {
-	Name  string // backend name, keeps profiles and state apart
-	Proxy string // host:port of the backend's proxy listener
+	Name  string // proxy name, keeps profiles and state apart
+	Proxy string // host:port of the proxy's listener
 }
 
 type launchState struct {
@@ -79,7 +79,7 @@ func FindChrome() (string, error) {
 	return "", errors.New("no Chrome, Chromium, Edge or Brave found (set HICCUP_BROWSER or pass --binary)")
 }
 
-func (l *Launcher) Launch(ctx context.Context, o backend.BrowserOptions) (*backend.BrowserStatus, error) {
+func (l *Launcher) Launch(ctx context.Context, o proxy.BrowserOptions) (*proxy.BrowserStatus, error) {
 	if st, _ := l.Status(ctx); st != nil && st.Running {
 		return st, nil
 	}
@@ -145,7 +145,7 @@ func (l *Launcher) Launch(ctx context.Context, o backend.BrowserOptions) (*backe
 				if err := writeState(l.statePath(), st); err != nil {
 					return nil, err
 				}
-				return &backend.BrowserStatus{Running: true, PID: pid, CDP: st.CDP, WS: st.WS, Token: st.Token}, nil
+				return &proxy.BrowserStatus{Running: true, PID: pid, CDP: st.CDP, WS: st.WS, Token: st.Token}, nil
 			}
 		}
 		select {
@@ -157,11 +157,11 @@ func (l *Launcher) Launch(ctx context.Context, o backend.BrowserOptions) (*backe
 	return nil, fmt.Errorf("browser started (pid %d) but never reported its DevTools address; see %s", pid, logPath)
 }
 
-func (l *Launcher) Status(_ context.Context) (*backend.BrowserStatus, error) {
+func (l *Launcher) Status(_ context.Context) (*proxy.BrowserStatus, error) {
 	var st launchState
 	b, err := os.ReadFile(l.statePath())
 	if errors.Is(err, fs.ErrNotExist) {
-		return &backend.BrowserStatus{}, nil
+		return &proxy.BrowserStatus{}, nil
 	}
 	if err != nil {
 		return nil, err
@@ -171,12 +171,12 @@ func (l *Launcher) Status(_ context.Context) (*backend.BrowserStatus, error) {
 	}
 	if !alive(st.PID) {
 		_ = os.Remove(l.statePath())
-		return &backend.BrowserStatus{}, nil
+		return &proxy.BrowserStatus{}, nil
 	}
-	return &backend.BrowserStatus{Running: true, PID: st.PID, CDP: st.CDP, WS: st.WS, Token: st.Token}, nil
+	return &proxy.BrowserStatus{Running: true, PID: st.PID, CDP: st.CDP, WS: st.WS, Token: st.Token}, nil
 }
 
-func (l *Launcher) Stop(ctx context.Context) (*backend.BrowserStatus, error) {
+func (l *Launcher) Stop(ctx context.Context) (*proxy.BrowserStatus, error) {
 	st, err := l.Status(ctx)
 	if err != nil {
 		return nil, err
@@ -185,7 +185,7 @@ func (l *Launcher) Stop(ctx context.Context) (*backend.BrowserStatus, error) {
 		kill(st.PID)
 	}
 	_ = os.Remove(l.statePath())
-	return &backend.BrowserStatus{}, nil
+	return &proxy.BrowserStatus{}, nil
 }
 
 func writeState(path string, st launchState) error {

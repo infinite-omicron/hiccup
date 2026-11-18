@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/infinite-omicron/hiccup/internal/backend"
 	"github.com/infinite-omicron/hiccup/internal/browser"
+	"github.com/infinite-omicron/hiccup/internal/proxy"
 )
 
 // Context is the ZAP context hiccup uses as its scope.
@@ -36,20 +36,21 @@ type Client struct {
 	browser *browser.Launcher
 }
 
-var _ backend.Backend = (*Client)(nil)
+var _ proxy.Proxy = (*Client)(nil)
 
-func New(baseURL, apiKey, proxy string) *Client {
-	if proxy == "" {
+// New connects to ZAP's API; listener is its proxy address (default: the API's host:port).
+func New(baseURL, apiKey, listener string) *Client {
+	if listener == "" {
 		if u, err := url.Parse(baseURL); err == nil {
-			proxy = u.Host
+			listener = u.Host
 		}
 	}
-	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), APIKey: apiKey, Proxy: proxy,
+	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), APIKey: apiKey, Proxy: listener,
 		HTTP:    &http.Client{Transport: &http.Transport{Proxy: nil}},
-		browser: &browser.Launcher{Name: "zap", Proxy: proxy}}
+		browser: &browser.Launcher{Name: "zap", Proxy: listener}}
 }
 
-func unsupported(what string) error { return fmt.Errorf("ZAP: %s: %w", what, backend.ErrUnsupported) }
+func unsupported(what string) error { return fmt.Errorf("ZAP: %s: %w", what, proxy.ErrUnsupported) }
 
 // call runs /JSON/<component>/<kind>/<name>/ with params (POSTed as a form, so
 // long raw requests fit) and decodes the JSON answer into out.
@@ -98,18 +99,18 @@ func (c *Client) Health(ctx context.Context) (map[string]any, error) {
 
 // ---- browser ----
 
-func (c *Client) BrowserLaunch(ctx context.Context, o backend.BrowserOptions) (*backend.BrowserStatus, error) {
+func (c *Client) BrowserLaunch(ctx context.Context, o proxy.BrowserOptions) (*proxy.BrowserStatus, error) {
 	if !o.KeepIntercept {
 		_, _ = c.SetIntercept(ctx, false)
 	}
 	return c.browser.Launch(ctx, o)
 }
 
-func (c *Client) BrowserStatus(ctx context.Context) (*backend.BrowserStatus, error) {
+func (c *Client) BrowserStatus(ctx context.Context) (*proxy.BrowserStatus, error) {
 	return c.browser.Status(ctx)
 }
 
-func (c *Client) BrowserStop(ctx context.Context) (*backend.BrowserStatus, error) {
+func (c *Client) BrowserStop(ctx context.Context) (*proxy.BrowserStatus, error) {
 	return c.browser.Stop(ctx)
 }
 
@@ -193,9 +194,9 @@ func mime(head string) string {
 	return strings.ToUpper(strings.TrimSpace(strings.Split(ct, ";")[0]))
 }
 
-func (m *message) summary() backend.Summary {
+func (m *message) summary() proxy.Summary {
 	method, u := m.methodURL()
-	s := backend.Summary{ID: m.id(), Method: method, URL: u, Status: m.status(), MIME: mime(m.ResponseHeader)}
+	s := proxy.Summary{ID: m.id(), Method: method, URL: u, Status: m.status(), MIME: mime(m.ResponseHeader)}
 	if ms, err := strconv.ParseInt(m.Timestamp, 10, 64); err == nil {
 		s.Time = time.UnixMilli(ms).Format(time.RFC3339)
 	}
@@ -208,7 +209,7 @@ func (m *message) summary() backend.Summary {
 
 // raw turns a message into an exchange. The request line is made
 // origin-form (path only) so it looks like what was sent on the wire.
-func (m *message) exchange() *backend.Exchange {
+func (m *message) exchange() *proxy.Exchange {
 	s := m.summary()
 	reqHead := m.RequestHeader
 	if line, rest, ok := strings.Cut(reqHead, "\r\n"); ok {
@@ -220,7 +221,7 @@ func (m *message) exchange() *backend.Exchange {
 			reqHead = strings.Join(f, " ") + "\r\n" + rest
 		}
 	}
-	e := &backend.Exchange{ID: s.ID, Time: s.Time, Method: s.Method, URL: s.URL, Status: s.Status, Length: s.Length,
+	e := &proxy.Exchange{ID: s.ID, Time: s.Time, Method: s.Method, URL: s.URL, Status: s.Status, Length: s.Length,
 		RequestB64: base64.StdEncoding.EncodeToString([]byte(reqHead + m.RequestBody))}
 	if m.ResponseHeader != "" {
 		e.ResponseB64 = base64.StdEncoding.EncodeToString([]byte(m.ResponseHeader + m.ResponseBody))
@@ -246,7 +247,7 @@ func (c *Client) messages(ctx context.Context, baseURL string) ([]message, error
 	return r.Messages, nil
 }
 
-func (c *Client) History(ctx context.Context, q backend.HistoryQuery) ([]backend.Summary, error) {
+func (c *Client) History(ctx context.Context, q proxy.HistoryQuery) ([]proxy.Summary, error) {
 	msgs, err := c.messages(ctx, "")
 	if err != nil {
 		return nil, err
@@ -257,7 +258,7 @@ func (c *Client) History(ctx context.Context, q backend.HistoryQuery) ([]backend
 			return nil, err
 		}
 	}
-	var out []backend.Summary
+	var out []proxy.Summary
 	for i := range msgs {
 		s := msgs[i].summary()
 		if s.ID <= q.Since || (q.Contains != "" && !strings.Contains(s.URL, q.Contains)) || (q.InScope && !matchAny(scope, s.URL)) {
@@ -271,7 +272,7 @@ func (c *Client) History(ctx context.Context, q backend.HistoryQuery) ([]backend
 	return out, nil
 }
 
-func (c *Client) HistoryItem(ctx context.Context, id int) (*backend.Exchange, error) {
+func (c *Client) HistoryItem(ctx context.Context, id int) (*proxy.Exchange, error) {
 	var r struct{ Message message }
 	if err := c.call(ctx, "core", "view", "message", url.Values{"id": {strconv.Itoa(id)}}, &r); err != nil {
 		return nil, err
@@ -279,13 +280,13 @@ func (c *Client) HistoryItem(ctx context.Context, id int) (*backend.Exchange, er
 	return r.Message.exchange(), nil
 }
 
-func (c *Client) SiteMap(ctx context.Context, prefix string, full bool) ([]backend.Exchange, error) {
+func (c *Client) SiteMap(ctx context.Context, prefix string, full bool) ([]proxy.Exchange, error) {
 	msgs, err := c.messages(ctx, prefix)
 	if err != nil {
 		return nil, err
 	}
 	seen := map[string]bool{}
-	var out []backend.Exchange
+	var out []proxy.Exchange
 	for i := len(msgs) - 1; i >= 0; i-- {
 		e := msgs[i].exchange()
 		if seen[e.Method+" "+e.URL] {
@@ -293,7 +294,7 @@ func (c *Client) SiteMap(ctx context.Context, prefix string, full bool) ([]backe
 		}
 		seen[e.Method+" "+e.URL] = true
 		if !full {
-			e = &backend.Exchange{Method: e.Method, URL: e.URL, Status: e.Status}
+			e = &proxy.Exchange{Method: e.Method, URL: e.URL, Status: e.Status}
 		}
 		out = append(out, *e)
 	}
@@ -303,7 +304,7 @@ func (c *Client) SiteMap(ctx context.Context, prefix string, full bool) ([]backe
 // ---- sending ----
 
 // rawRequest builds the raw request ZAP's sendRequest wants: absolute URL in the request line.
-func rawRequest(r backend.Request) (string, error) {
+func rawRequest(r proxy.Request) (string, error) {
 	if r.RawB64 != "" {
 		raw, err := base64.StdEncoding.DecodeString(r.RawB64)
 		if err != nil {
@@ -370,8 +371,8 @@ func rawRequest(r backend.Request) (string, error) {
 	return sb.String(), nil
 }
 
-func (c *Client) Send(ctx context.Context, reqs []backend.Request) ([]backend.Exchange, error) {
-	out := make([]backend.Exchange, 0, len(reqs))
+func (c *Client) Send(ctx context.Context, reqs []proxy.Request) ([]proxy.Exchange, error) {
+	out := make([]proxy.Exchange, 0, len(reqs))
 	for _, r := range reqs {
 		raw, err := rawRequest(r)
 		if err != nil {
@@ -395,11 +396,11 @@ func (c *Client) Send(ctx context.Context, reqs []backend.Request) ([]backend.Ex
 	return out, nil
 }
 
-func (c *Client) SendToRepeater(context.Context, backend.Request, string) error {
+func (c *Client) SendToRepeater(context.Context, proxy.Request, string) error {
 	return unsupported("Repeater (use hiccup send, or ZAP's Requester in the desktop UI)")
 }
 
-func (c *Client) SendToIntruder(context.Context, backend.Request, string) error {
+func (c *Client) SendToIntruder(context.Context, proxy.Request, string) error {
 	return unsupported("Intruder (use ZAP's Fuzzer in the desktop UI)")
 }
 
@@ -430,7 +431,7 @@ var riskIDs = map[string]string{"HIGH": "3", "MEDIUM": "2", "LOW": "1", "INFORMA
 var confidenceNames = map[string]string{"Confirmed": "CERTAIN", "High": "CERTAIN", "Medium": "FIRM", "Low": "TENTATIVE", "False Positive": "TENTATIVE"}
 var confidenceIDs = map[string]string{"CERTAIN": "3", "FIRM": "2", "TENTATIVE": "1"}
 
-func (c *Client) Issues(ctx context.Context, prefix string) ([]backend.Issue, error) {
+func (c *Client) Issues(ctx context.Context, prefix string) ([]proxy.Issue, error) {
 	var r struct {
 		Alerts []struct {
 			Name, Alert, Risk, Confidence, URL, Description, Solution string
@@ -443,13 +444,13 @@ func (c *Client) Issues(ctx context.Context, prefix string) ([]backend.Issue, er
 	if err := c.call(ctx, "alert", "view", "alerts", p, &r); err != nil {
 		return nil, err
 	}
-	out := make([]backend.Issue, 0, len(r.Alerts))
+	out := make([]proxy.Issue, 0, len(r.Alerts))
 	for _, a := range r.Alerts {
 		name := a.Name
 		if name == "" {
 			name = a.Alert
 		}
-		out = append(out, backend.Issue{Name: name, URL: a.URL, Severity: riskNames[a.Risk], Confidence: confidenceNames[a.Confidence],
+		out = append(out, proxy.Issue{Name: name, URL: a.URL, Severity: riskNames[a.Risk], Confidence: confidenceNames[a.Confidence],
 			Detail: a.Description, Remediation: a.Solution})
 	}
 	return out, nil
@@ -477,14 +478,14 @@ func (c *Client) messageFor(ctx context.Context, u string) (string, error) {
 	if len(msgs) > 0 {
 		return msgs[len(msgs)-1].ID, nil
 	}
-	ex, err := c.Send(ctx, []backend.Request{{URL: u}})
+	ex, err := c.Send(ctx, []proxy.Request{{URL: u}})
 	if err != nil {
 		return "", err
 	}
 	return strconv.Itoa(ex[0].ID), nil
 }
 
-func (c *Client) AddIssues(ctx context.Context, issues []backend.Issue) (int, error) {
+func (c *Client) AddIssues(ctx context.Context, issues []proxy.Issue) (int, error) {
 	for i, is := range issues {
 		id, err := c.messageFor(ctx, is.URL)
 		if err != nil {
@@ -608,25 +609,25 @@ func (c *Client) rateRules(ctx context.Context) ([]rateRule, error) {
 	return r.Rules, err
 }
 
-func (c *Client) Throttle(ctx context.Context) ([]backend.ThrottleRule, error) {
+func (c *Client) Throttle(ctx context.Context) ([]proxy.ThrottleRule, error) {
 	rules, err := c.rateRules(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var out []backend.ThrottleRule
+	var out []proxy.ThrottleRule
 	for _, r := range rules {
 		if !strings.HasPrefix(r.Description, rulePrefix) {
 			continue
 		}
 		rps, _ := strconv.ParseFloat(fmt.Sprint(r.RequestsPerSecond), 64)
-		out = append(out, backend.ThrottleRule{Host: r.MatchString, RPS: rps, Burst: 1})
+		out = append(out, proxy.ThrottleRule{Host: r.MatchString, RPS: rps, Burst: 1})
 	}
 	return out, nil
 }
 
 // SetThrottle maps rules onto ZAP rate limits. ZAP takes whole requests per
 // second (so rates under 1 become 1) and has no jitter or 429 backoff.
-func (c *Client) SetThrottle(ctx context.Context, rules []backend.ThrottleRule) ([]backend.ThrottleRule, error) {
+func (c *Client) SetThrottle(ctx context.Context, rules []proxy.ThrottleRule) ([]proxy.ThrottleRule, error) {
 	for _, r := range rules {
 		host := strings.TrimPrefix(strings.ToLower(r.Host), "*.")
 		desc := rulePrefix + host
@@ -662,14 +663,14 @@ func (c *Client) ClearThrottle(ctx context.Context) error {
 
 // ---- User-Agent: ZAP's default UA for its own requests, Replacer rules for proxied ones ----
 
-func (c *Client) UserAgent(ctx context.Context) (*backend.UserAgent, error) {
+func (c *Client) UserAgent(ctx context.Context) (*proxy.UserAgent, error) {
 	var r struct {
 		Rules []struct{ Description, Replacement, MatchString string } `json:"rules"`
 	}
 	if err := c.call(ctx, "replacer", "view", "rules", nil, &r); err != nil {
 		return nil, err
 	}
-	ua := &backend.UserAgent{Scope: "all", ClientHints: map[string]string{}}
+	ua := &proxy.UserAgent{Scope: "all", ClientHints: map[string]string{}}
 	for _, rule := range r.Rules {
 		switch {
 		case rule.Description == rulePrefix+"User-Agent":
@@ -681,7 +682,7 @@ func (c *Client) UserAgent(ctx context.Context) (*backend.UserAgent, error) {
 	return ua, nil
 }
 
-func (c *Client) SetUserAgent(ctx context.Context, ua backend.UserAgent) error {
+func (c *Client) SetUserAgent(ctx context.Context, ua proxy.UserAgent) error {
 	if err := c.call(ctx, "network", "action", "setDefaultUserAgent", url.Values{"userAgent": {ua.UA}}, nil); err != nil {
 		return err
 	}
@@ -707,7 +708,7 @@ func (c *Client) SetUserAgent(ctx context.Context, ua backend.UserAgent) error {
 
 // ---- not applicable ----
 
-func (c *Client) InstallExtensions(context.Context, []backend.Extension) (*backend.InstallResult, error) {
+func (c *Client) InstallExtensions(context.Context, []proxy.Extension) (*proxy.InstallResult, error) {
 	return nil, unsupported("loading Burp extensions (install ZAP add-ons from the Marketplace instead)")
 }
 

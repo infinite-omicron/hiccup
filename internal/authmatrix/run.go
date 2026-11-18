@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/infinite-omicron/hiccup/internal/backend"
+	"github.com/infinite-omicron/hiccup/internal/proxy"
 	"github.com/infinite-omicron/hiccup/internal/session"
 )
 
@@ -102,7 +102,7 @@ type RunOptions struct {
 }
 
 // Run replays every recorded request as every account through b.
-func Run(ctx context.Context, b backend.Backend, o RunOptions) (*Matrix, error) {
+func Run(ctx context.Context, b proxy.Proxy, o RunOptions) (*Matrix, error) {
 	byName := map[string]Account{}
 	for _, a := range o.Accounts {
 		byName[a.Name] = a
@@ -184,7 +184,7 @@ func Run(ctx context.Context, b backend.Backend, o RunOptions) (*Matrix, error) 
 	return m, nil
 }
 
-func replay(ctx context.Context, b backend.Backend, o RunOptions, byName map[string]Account, known map[string]int, action string, rr *RequestResult) error {
+func replay(ctx context.Context, b proxy.Proxy, o RunOptions, byName map[string]Account, known map[string]int, action string, rr *RequestResult) error {
 	recorder := byName[rr.Recorder]
 	cells := make([]Cell, len(o.Accounts))
 	for i, a := range o.Accounts {
@@ -212,14 +212,14 @@ func replay(ctx context.Context, b backend.Backend, o RunOptions, byName map[str
 	if p := u.Port(); p != "" {
 		fmt.Sscan(p, &port)
 	}
-	reqs := make([]backend.Request, len(o.Accounts))
+	reqs := make([]proxy.Request, len(o.Accounts))
 	for i, a := range o.Accounts {
 		s := o.Sessions[a.Name]
 		if s == nil {
 			s = session.Anonymous(o.Site, a.Name)
 		}
 		raw := s.Apply(orig.Request(), u.Hostname(), o.StripHeader)
-		reqs[i] = backend.Request{RawB64: base64.StdEncoding.EncodeToString(raw), Host: u.Hostname(), Port: port, HTTPS: &https}
+		reqs[i] = proxy.Request{RawB64: base64.StdEncoding.EncodeToString(raw), Host: u.Hostname(), Port: port, HTTPS: &https}
 	}
 	exs, err := b.Send(ctx, reqs)
 	if err != nil {

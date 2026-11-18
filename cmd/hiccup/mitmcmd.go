@@ -13,9 +13,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/infinite-omicron/hiccup/internal/backend/burp"
-	"github.com/infinite-omicron/hiccup/internal/backend/mitm"
 	"github.com/infinite-omicron/hiccup/internal/config"
+	"github.com/infinite-omicron/hiccup/internal/proxy/burp"
+	"github.com/infinite-omicron/hiccup/internal/proxy/mitm"
 )
 
 // mitmRuntime reads the URL and token the hiccup mitmproxy addon wrote.

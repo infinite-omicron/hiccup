@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/infinite-omicron/hiccup/internal/backend"
 	"github.com/infinite-omicron/hiccup/internal/bapp"
+	"github.com/infinite-omicron/hiccup/internal/proxy"
 )
 
 func (a *app) bappCmd() *cobra.Command {
@@ -46,7 +46,7 @@ func (a *app) bappCmd() *cobra.Command {
 			if len(names) == 0 {
 				return fmt.Errorf("name BApps to install, or list them in config burp.bapps")
 			}
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -73,7 +73,7 @@ type bappRow struct {
 
 // installBApps downloads the named BApps and loads them in one batch, so Burp
 // reloads its extensions only once.
-func (a *app) installBApps(cmd *cobra.Command, b backend.Backend, names []string, save bool) ([]bappRow, error) {
+func (a *app) installBApps(cmd *cobra.Command, b proxy.Proxy, names []string, save bool) ([]bappRow, error) {
 	ctx := cmd.Context()
 	h, err := b.Health(ctx)
 	if err != nil {
@@ -85,7 +85,7 @@ func (a *app) installBApps(cmd *cobra.Command, b backend.Backend, names []string
 		return nil, err
 	}
 	var rows []bappRow
-	var exts []backend.Extension
+	var exts []proxy.Extension
 	needs := map[string]bool{}
 	for _, n := range names {
 		e, err := bapp.Find(entries, n)
@@ -104,7 +104,7 @@ func (a *app) installBApps(cmd *cobra.Command, b backend.Backend, names []string
 			continue
 		}
 		needs[d.Type()] = true
-		exts = append(exts, backend.Extension{Path: d.Entry, Type: d.Type(), Name: d.Name})
+		exts = append(exts, proxy.Extension{Path: d.Entry, Type: d.Type(), Name: d.Name})
 		rows = append(rows, row)
 	}
 	if needs["python"] {
@@ -150,7 +150,7 @@ func (a *app) installBApps(cmd *cobra.Command, b backend.Backend, names []string
 
 // ensureRuntime points Burp at a Jython or JRuby jar, downloading one from
 // Maven Central when Burp has none configured (or the configured file is gone).
-func (a *app) ensureRuntime(cmd *cobra.Command, b backend.Backend, lang, key, group, artifact, sub string) error {
+func (a *app) ensureRuntime(cmd *cobra.Command, b proxy.Proxy, lang, key, group, artifact, sub string) error {
 	raw, err := b.UserOptions(cmd.Context(), "user_options.extender."+lang)
 	if err != nil {
 		return err

@@ -10,7 +10,7 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
-	"github.com/infinite-omicron/hiccup/internal/backend"
+	"github.com/infinite-omicron/hiccup/internal/proxy"
 )
 
 // WriteJSON writes the matrix without the base64 evidence unless full is set.
@@ -210,7 +210,7 @@ func (m *Matrix) WriteXLSX(path string, o XLSXOptions) error {
 
 // Issues turns findings into Burp issues, with the owner's and the other
 // account's request/response as evidence.
-func (m *Matrix) Issues() []backend.Issue {
+func (m *Matrix) Issues() []proxy.Issue {
 	accounts := map[string]Account{}
 	for _, a := range m.Accounts {
 		accounts[a.Name] = a
@@ -220,7 +220,7 @@ func (m *Matrix) Issues() []backend.Issue {
 		"horizontal":        "Horizontal privilege escalation (IDOR)",
 		"forceful-browsing": "Unauthenticated access (forceful browsing)",
 	}
-	var out []backend.Issue
+	var out []proxy.Issue
 	for _, f := range m.Findings(false) {
 		a := accounts[f.Cell.Account]
 		var owner *Cell
@@ -236,7 +236,7 @@ func (m *Matrix) Issues() []backend.Issue {
 			html.EscapeString(f.Request.Method), html.EscapeString(f.Request.Template),
 			html.EscapeString(f.Request.Recorder), html.EscapeString(f.Action),
 			f.Cell.Expected, html.EscapeString(f.Cell.Why), f.Cell.Verdict, html.EscapeString(f.Cell.Reason))
-		is := backend.Issue{
+		is := proxy.Issue{
 			Name:        titles[f.Cell.Finding],
 			URL:         f.Request.URL,
 			Severity:    "HIGH",
@@ -245,10 +245,10 @@ func (m *Matrix) Issues() []backend.Issue {
 			Remediation: "Enforce authorization on the server for every request: check the caller's role and that they own the referenced object.",
 		}
 		if owner != nil && owner.RequestB64 != "" {
-			is.Evidence = append(is.Evidence, backend.Evidence{URL: f.Request.URL, RequestB64: owner.RequestB64, ResponseB64: owner.ResponseB64})
+			is.Evidence = append(is.Evidence, proxy.Evidence{URL: f.Request.URL, RequestB64: owner.RequestB64, ResponseB64: owner.ResponseB64})
 		}
 		if f.Cell.RequestB64 != "" {
-			is.Evidence = append(is.Evidence, backend.Evidence{URL: f.Request.URL, RequestB64: f.Cell.RequestB64, ResponseB64: f.Cell.ResponseB64})
+			is.Evidence = append(is.Evidence, proxy.Evidence{URL: f.Request.URL, RequestB64: f.Cell.RequestB64, ResponseB64: f.Cell.ResponseB64})
 		}
 		out = append(out, is)
 	}

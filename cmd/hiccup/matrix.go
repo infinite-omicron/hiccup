@@ -12,10 +12,10 @@ import (
 	"golang.org/x/term"
 
 	"github.com/infinite-omicron/hiccup/internal/authmatrix"
-	"github.com/infinite-omicron/hiccup/internal/backend"
 	"github.com/infinite-omicron/hiccup/internal/browser"
 	"github.com/infinite-omicron/hiccup/internal/config"
 	"github.com/infinite-omicron/hiccup/internal/gsheets"
+	"github.com/infinite-omicron/hiccup/internal/proxy"
 	"github.com/infinite-omicron/hiccup/internal/session"
 )
 
@@ -70,7 +70,7 @@ func (a *app) matrixRecordCmd() *cobra.Command {
 			if !ok {
 				return fmt.Errorf("no account %q in site %s", as, site)
 			}
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -176,8 +176,8 @@ func pause(s *config.Site, settle time.Duration) {
 	time.Sleep(d)
 }
 
-func (a *app) finishRecording(cmd *cobra.Command, b backend.Backend, site, role string, level int, account string, startID int, marks []authmatrix.Mark, f authmatrix.Filter) error {
-	items, err := b.History(cmd.Context(), backend.HistoryQuery{Since: startID, Limit: 100000})
+func (a *app) finishRecording(cmd *cobra.Command, b proxy.Proxy, site, role string, level int, account string, startID int, marks []authmatrix.Mark, f authmatrix.Filter) error {
+	items, err := b.History(cmd.Context(), proxy.HistoryQuery{Since: startID, Limit: 100000})
 	if err != nil {
 		return err
 	}
@@ -212,7 +212,7 @@ func (a *app) matrixMarkCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -247,7 +247,7 @@ func (a *app) matrixStopCmd() *cobra.Command {
 			if !ok {
 				return fmt.Errorf("account %q is no longer in the config", st.Account)
 			}
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -311,7 +311,7 @@ func (a *app) matrixRunCmd() *cobra.Command {
 			if term.IsTerminal(int(os.Stderr.Fd())) {
 				opts.Progress = func(done, total int) { fmt.Fprintf(os.Stderr, "\rhiccup: replayed %d/%d requests", done, total) }
 			}
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -469,7 +469,7 @@ func (a *app) matrixExportCmd() *cobra.Command {
 				out["sheets"] = link
 			}
 			if burpIssues {
-				b, err := a.be()
+				b, err := a.proxyClient()
 				if err != nil {
 					return err
 				}

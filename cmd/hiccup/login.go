@@ -13,9 +13,9 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/infinite-omicron/hiccup/internal/backend"
 	"github.com/infinite-omicron/hiccup/internal/browser"
 	"github.com/infinite-omicron/hiccup/internal/config"
+	"github.com/infinite-omicron/hiccup/internal/proxy"
 	"github.com/infinite-omicron/hiccup/internal/secrets"
 	"github.com/infinite-omicron/hiccup/internal/session"
 )
@@ -44,7 +44,7 @@ func (a *app) loginCmd() *cobra.Command {
 					return fmt.Errorf("unknown account in %v for site %s (see hiccup creds list)", args, site)
 				}
 			}
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -79,7 +79,7 @@ type loginOptions struct {
 }
 
 // login logs one account in and saves its session.
-func (a *app) login(cmd *cobra.Command, b backend.Backend, site string, s *config.Site, acct *config.Account, o loginOptions) (*session.Session, error) {
+func (a *app) login(cmd *cobra.Command, b proxy.Proxy, site string, s *config.Site, acct *config.Account, o loginOptions) (*session.Session, error) {
 	manual, timeout, keep := o.manual, o.timeout, o.keep
 	if acct.Username == "" {
 		sess := session.Anonymous(site, acct.Name)
@@ -212,7 +212,7 @@ func (a *app) manualLogin(cmd *cobra.Command, s *config.Site, acct *config.Accou
 
 // capture reads the session from the tab's cookies and, for configured
 // session headers (e.g. Authorization), from proxy history since startID.
-func capture(ctx context.Context, b backend.Backend, tab *browser.Session, site string, s *config.Site, account string, startID int) (*session.Session, error) {
+func capture(ctx context.Context, b proxy.Proxy, tab *browser.Session, site string, s *config.Site, account string, startID int) (*session.Session, error) {
 	urls := []string{s.BaseURL}
 	urls = append(urls, s.Scope...)
 	cookies, err := tab.Cookies(urls...)
@@ -230,7 +230,7 @@ func capture(ctx context.Context, b backend.Backend, tab *browser.Session, site 
 		}
 	}
 	if len(headers) > 0 {
-		items, err := b.History(ctx, backend.HistoryQuery{Since: startID, Limit: 50})
+		items, err := b.History(ctx, proxy.HistoryQuery{Since: startID, Limit: 50})
 		if err != nil {
 			return nil, err
 		}
@@ -261,8 +261,8 @@ func capture(ctx context.Context, b backend.Backend, tab *browser.Session, site 
 }
 
 // latestID is the id of the newest proxy history item, or 0.
-func latestID(ctx context.Context, b backend.Backend) (int, error) {
-	items, err := b.History(ctx, backend.HistoryQuery{Since: -1, Limit: 1})
+func latestID(ctx context.Context, b proxy.Proxy) (int, error) {
+	items, err := b.History(ctx, proxy.HistoryQuery{Since: -1, Limit: 1})
 	if err != nil || len(items) == 0 {
 		return 0, err
 	}

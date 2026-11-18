@@ -12,7 +12,7 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
-	"github.com/infinite-omicron/hiccup/internal/backend"
+	"github.com/infinite-omicron/hiccup/internal/proxy"
 	"github.com/infinite-omicron/hiccup/internal/session"
 )
 
@@ -41,7 +41,7 @@ func TestTemplate(t *testing.T) {
 func intp(i int) *int { return &i }
 
 func TestBuild(t *testing.T) {
-	items := []backend.Summary{
+	items := []proxy.Summary{
 		{ID: 1, Method: "GET", URL: "http://a.test/login"}, // before first mark
 		{ID: 3, Method: "GET", URL: "http://a.test/dashboard", Status: intp(200)},
 		{ID: 4, Method: "GET", URL: "http://a.test/static/app.js"}, // static
@@ -125,22 +125,22 @@ func TestExpectAndFinding(t *testing.T) {
 	check(u2, u1, doc, Overrides{"*": {"user2": "allow"}}, true, Allowed, "")
 }
 
-// fakeBackend serves canned responses keyed by the Cookie header.
-type fakeBackend struct {
-	backend.Backend
+// fakeProxy serves canned responses keyed by the Cookie header.
+type fakeProxy struct {
+	proxy.Proxy
 	history map[int]string
 	respond func(raw string) string
 }
 
-func (f *fakeBackend) HistoryItem(_ context.Context, id int) (*backend.Exchange, error) {
-	return &backend.Exchange{ID: id, RequestB64: base64.StdEncoding.EncodeToString([]byte(f.history[id]))}, nil
+func (f *fakeProxy) HistoryItem(_ context.Context, id int) (*proxy.Exchange, error) {
+	return &proxy.Exchange{ID: id, RequestB64: base64.StdEncoding.EncodeToString([]byte(f.history[id]))}, nil
 }
 
-func (f *fakeBackend) Send(_ context.Context, reqs []backend.Request) ([]backend.Exchange, error) {
-	out := make([]backend.Exchange, len(reqs))
+func (f *fakeProxy) Send(_ context.Context, reqs []proxy.Request) ([]proxy.Exchange, error) {
+	out := make([]proxy.Exchange, len(reqs))
 	for i, r := range reqs {
 		raw, _ := base64.StdEncoding.DecodeString(r.RawB64)
-		out[i] = backend.Exchange{RequestB64: r.RawB64, ResponseB64: base64.StdEncoding.EncodeToString([]byte(f.respond(string(raw))))}
+		out[i] = proxy.Exchange{RequestB64: r.RawB64, ResponseB64: base64.StdEncoding.EncodeToString([]byte(f.respond(string(raw))))}
 	}
 	return out, nil
 }
@@ -148,7 +148,7 @@ func (f *fakeBackend) Send(_ context.Context, reqs []backend.Request) ([]backend
 func TestRunAndExport(t *testing.T) {
 	t.Setenv("HICCUP_HOME", t.TempDir())
 	page := func(body string) string { return "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" + body }
-	f := &fakeBackend{
+	f := &fakeProxy{
 		history: map[int]string{
 			1: "GET /admin/users HTTP/1.1\r\nHost: a.test\r\nCookie: s=admin\r\n\r\n",
 			2: "GET /documents/1 HTTP/1.1\r\nHost: a.test\r\nCookie: s=u1\r\n\r\n",

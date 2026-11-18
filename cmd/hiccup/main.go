@@ -13,11 +13,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/infinite-omicron/hiccup/internal/backend"
-	"github.com/infinite-omicron/hiccup/internal/backend/burp"
-	"github.com/infinite-omicron/hiccup/internal/backend/mitm"
-	"github.com/infinite-omicron/hiccup/internal/backend/zap"
 	"github.com/infinite-omicron/hiccup/internal/config"
+	"github.com/infinite-omicron/hiccup/internal/proxy"
+	"github.com/infinite-omicron/hiccup/internal/proxy/burp"
+	"github.com/infinite-omicron/hiccup/internal/proxy/mitm"
+	"github.com/infinite-omicron/hiccup/internal/proxy/zap"
 	"github.com/infinite-omicron/hiccup/internal/secrets"
 )
 
@@ -30,7 +30,7 @@ type app struct {
 	burpURL string
 	token   string
 	cfg     *config.Config
-	backend backend.Backend
+	proxy   proxy.Proxy
 }
 
 func main() {
@@ -84,17 +84,17 @@ func main() {
 	stop()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "hiccup:", err)
-		if errors.Is(err, backend.ErrUnsupported) {
+		if errors.Is(err, proxy.ErrUnsupported) {
 			os.Exit(3)
 		}
 		os.Exit(1)
 	}
 }
 
-// be returns the configured backend.
-func (a *app) be() (backend.Backend, error) {
-	if a.backend != nil {
-		return a.backend, nil
+// proxyClient connects to the configured proxy (burp, zap or mitmproxy).
+func (a *app) proxyClient() (proxy.Proxy, error) {
+	if a.proxy != nil {
+		return a.proxy, nil
 	}
 	switch name := a.cfg.ProxyName(); name {
 	case "burp":
@@ -108,24 +108,24 @@ func (a *app) be() (backend.Backend, error) {
 		if token == "" {
 			return nil, fmt.Errorf("no Burp token: load hiccup-burp.jar in Burp (it writes %s) or set HICCUP_BURP_TOKEN", config.RuntimePath())
 		}
-		a.backend = burp.New(url, token)
+		a.proxy = burp.New(url, token)
 	case "zap":
-		u, keyRef, proxy := a.cfg.ZapEndpoint()
+		u, keyRef, listener := a.cfg.ZapEndpoint()
 		key, err := secrets.Resolve(keyRef)
 		if err != nil {
 			return nil, fmt.Errorf("ZAP API key: %w", err)
 		}
-		a.backend = zap.New(u, key, proxy)
+		a.proxy = zap.New(u, key, listener)
 	case "mitmproxy", "mitm":
 		u, token, err := mitmRuntime()
 		if err != nil {
 			return nil, err
 		}
-		a.backend = mitm.New(u, token, a.cfg.MitmSettings().Proxy)
+		a.proxy = mitm.New(u, token, a.cfg.MitmSettings().Proxy)
 	default:
 		return nil, fmt.Errorf("unknown proxy %q (burp, zap or mitmproxy)", name)
 	}
-	return a.backend, nil
+	return a.proxy, nil
 }
 
 // print writes v as indented JSON, or as a table of the given columns when --format table.

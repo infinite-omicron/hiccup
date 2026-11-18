@@ -9,10 +9,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/infinite-omicron/hiccup/internal/backend"
-	"github.com/infinite-omicron/hiccup/internal/backend/burp"
 	"github.com/infinite-omicron/hiccup/internal/browser"
 	"github.com/infinite-omicron/hiccup/internal/config"
+	"github.com/infinite-omicron/hiccup/internal/proxy"
+	"github.com/infinite-omicron/hiccup/internal/proxy/burp"
 )
 
 //go:embed hiccup_mitm.py
@@ -35,20 +35,21 @@ type Client struct {
 	browser *browser.Launcher
 }
 
-var _ backend.Backend = (*Client)(nil)
+var _ proxy.Proxy = (*Client)(nil)
 
-func New(url, token, proxy string) *Client {
-	return &Client{Client: burp.New(url, token), browser: &browser.Launcher{Name: "mitm", Proxy: proxy}}
+// New connects to the addon's API; listener is mitmproxy's proxy address.
+func New(url, token, listener string) *Client {
+	return &Client{Client: burp.New(url, token), browser: &browser.Launcher{Name: "mitm", Proxy: listener}}
 }
 
-func (c *Client) BrowserLaunch(ctx context.Context, o backend.BrowserOptions) (*backend.BrowserStatus, error) {
+func (c *Client) BrowserLaunch(ctx context.Context, o proxy.BrowserOptions) (*proxy.BrowserStatus, error) {
 	return c.browser.Launch(ctx, o)
 }
 
-func (c *Client) BrowserStatus(ctx context.Context) (*backend.BrowserStatus, error) {
+func (c *Client) BrowserStatus(ctx context.Context) (*proxy.BrowserStatus, error) {
 	return c.browser.Status(ctx)
 }
 
-func (c *Client) BrowserStop(ctx context.Context) (*backend.BrowserStatus, error) {
+func (c *Client) BrowserStop(ctx context.Context) (*proxy.BrowserStatus, error) {
 	return c.browser.Stop(ctx)
 }

@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/infinite-omicron/hiccup/internal/backend"
 	"github.com/infinite-omicron/hiccup/internal/config"
+	"github.com/infinite-omicron/hiccup/internal/proxy"
 )
 
 // Mark starts an action: proxy history items with id > FromID belong to it,
@@ -133,7 +133,7 @@ type Filter struct {
 	Exclude []*regexp.Regexp
 }
 
-func (f Filter) keep(s backend.Summary) bool {
+func (f Filter) keep(s proxy.Summary) bool {
 	u, err := url.Parse(s.URL)
 	if err != nil {
 		return false
@@ -162,7 +162,7 @@ func (f Filter) keep(s backend.Summary) bool {
 
 // Build groups proxy history items into actions by marks, keeping in-scope,
 // non-static requests and one request per method+template per action.
-func Build(items []backend.Summary, marks []Mark, f Filter) []Action {
+func Build(items []proxy.Summary, marks []Mark, f Filter) []Action {
 	sort.Slice(marks, func(i, j int) bool { return marks[i].FromID < marks[j].FromID })
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
 	var actions []Action

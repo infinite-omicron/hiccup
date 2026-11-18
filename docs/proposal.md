@@ -3,7 +3,7 @@
 ## Context
 You want agents (Claude Code, agy) and scripts to drive Burp: run its browser, use its tools, push open-source scanner findings (Nuclei, etc.) into Burp as issues, and generate the **Auth Matrix** from your `Checklist.xltx` template automatically, using several test credentials per role. It has two parts:
 1. **`hiccup-burp.jar`**: the smallest Montoya extension that can expose Burp through an authenticated REST API on localhost. It contains no logic.
-2. **`hiccup`**: a single Go binary for macOS, Windows and Linux that holds all the logic, including config, credentials, browser automation over CDP, importers and the auth matrix. Proxy access goes through a `Backend` interface, so ZAP or mitmproxy can be added later without changing commands.
+2. **`hiccup`**: a single Go binary for macOS, Windows and Linux that holds all the logic, including config, credentials, browser automation over CDP, importers and the auth matrix. Proxy access goes through a `Proxy` interface, so ZAP or mitmproxy can be added later without changing commands.
 
 The extension follows PortSwigger's [creating extensions docs](https://portswigger.net/burp/documentation/desktop/extend-burp/extensions/creating):
 - Java 21 or lower; I'll build with `--release 17` using the local JDK 17
@@ -36,7 +36,7 @@ extension/                        # hiccup-burp.jar
 cmd/hiccup/main.go                # cobra root + subcommands
 internal/config/                  # ~/.hiccup/config.json load/save, HICCUP_* env overrides
 internal/secrets/                 # plain | env:VAR | keychain:service/account  (zalando/go-keyring)
-internal/backend/                 # Backend interface; burp/ implementation (zap/, mitm/ later)
+internal/proxy/                   # Proxy interface; burp/ implementation (zap/, mitm/ later)
 internal/browser/                 # chromedp over CDP: nav, eval, screenshot, login recipes, nav crawl
 internal/importers/nuclei.go      # nuclei JSONL → issues
 internal/authmatrix/              # record, replay, classify, export (xlsx/csv/json/sheets/burp)
@@ -145,10 +145,10 @@ Makefile                          # jar + 6 cross-compiled binaries → dist/
    - **burp-issues**: one issue per flagged cell, with both request/response pairs as evidence.
 
 ## Phases
-1. Extension and core CLI: config, secrets, backend, browser, history/send/issues, Nuclei import.
+1. Extension and core CLI: config, secrets, proxy, browser, history/send/issues, Nuclei import.
 2. Login recipes and sessions, then the auth matrix and its exports.
 3. BApp install and the Google Sheets export.
-4. Later: `internal/backend/zap` (ZAP REST API) and `internal/backend/mitm` (a mitmproxy addon script that exposes the same endpoints).
+4. Later: `internal/proxy/zap` (ZAP REST API) and `internal/proxy/mitm` (a mitmproxy addon script that exposes the same endpoints).
 
 ## Verification
 - `make` builds the jar and six binaries. `go test ./...` covers the Nuclei mapping, path templating, the classifier using fixture responses, and an xlsx export round-trip against `Checklist.xltx`.

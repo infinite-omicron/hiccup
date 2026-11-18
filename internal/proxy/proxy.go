@@ -1,6 +1,6 @@
-// Package backend defines what hiccup needs from an intercepting proxy. Burp is
-// the first implementation; ZAP and mitmproxy can follow behind the same interface.
-package backend
+// Package proxy defines what hiccup needs from an intercepting proxy, with
+// implementations for Burp, ZAP and mitmproxy in its subpackages.
+package proxy
 
 import (
 	"context"
@@ -9,11 +9,11 @@ import (
 	"errors"
 )
 
-// ErrUnsupported is returned (wrapped) for features a backend doesn't have,
+// ErrUnsupported is returned (wrapped) for features a proxy doesn't have,
 // e.g. Repeater on mitmproxy. The CLI exits with code 3 for it.
-var ErrUnsupported = errors.New("not supported by this backend")
+var ErrUnsupported = errors.New("not supported by this proxy")
 
-type Backend interface {
+type Proxy interface {
 	Health(ctx context.Context) (map[string]any, error)
 
 	BrowserLaunch(ctx context.Context, opts BrowserOptions) (*BrowserStatus, error)

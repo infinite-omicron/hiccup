@@ -12,7 +12,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/infinite-omicron/hiccup/internal/backend"
+	"github.com/infinite-omicron/hiccup/internal/proxy"
 )
 
 // fakeZAP records API calls and answers the few views the client reads.
@@ -96,7 +96,7 @@ func TestHealthHistoryItem(t *testing.T) {
 	if err != nil || h["version"] != "ZAP 2.17.0" || h["intercept"] != false {
 		t.Fatalf("health: %v %v", h, err)
 	}
-	rows, err := c.History(ctx, backend.HistoryQuery{Since: 1, Limit: 10})
+	rows, err := c.History(ctx, proxy.HistoryQuery{Since: 1, Limit: 10})
 	if err != nil || len(rows) != 1 || rows[0].ID != 2 || rows[0].URL != "https://a.test/docs/2" || *rows[0].Status != 200 || rows[0].MIME != "HTML" {
 		t.Fatalf("history: %+v %v", rows, err)
 	}
@@ -119,7 +119,7 @@ func TestSendMakesRequestLineAbsolute(t *testing.T) {
 	c, f := setup(t)
 	https := true
 	raw := "GET /a?b=1 HTTP/1.1\r\nHost: a.test\r\nCookie: s=2\r\n\r\n"
-	ex, err := c.Send(context.Background(), []backend.Request{
+	ex, err := c.Send(context.Background(), []proxy.Request{
 		{RawB64: b64(raw), Host: "a.test", Port: 8443, HTTPS: &https},
 		{URL: "http://a.test/form", Method: "POST", Body: "q=1", Headers: [][2]string{{"X-A", "1"}}},
 	})
@@ -139,7 +139,7 @@ func TestSendMakesRequestLineAbsolute(t *testing.T) {
 
 func TestAddIssues(t *testing.T) {
 	c, f := setup(t)
-	n, err := c.AddIssues(context.Background(), []backend.Issue{
+	n, err := c.AddIssues(context.Background(), []proxy.Issue{
 		{Name: "IDOR", URL: "https://a.test/docs/2", Severity: "HIGH", Confidence: "TENTATIVE", Detail: "<p>user2 read <b>doc</b> &amp; more</p>"},
 		{Name: "New", URL: "https://new.test/", Severity: "LOW"}, // no history yet: a GET creates a message
 	})
@@ -171,7 +171,7 @@ func TestScopeThrottleUA(t *testing.T) {
 		t.Error("out of scope")
 	}
 
-	rules, err := c.SetThrottle(ctx, []backend.ThrottleRule{{Host: "*.a.test", RPS: 0.5}})
+	rules, err := c.SetThrottle(ctx, []proxy.ThrottleRule{{Host: "*.a.test", RPS: 0.5}})
 	if err != nil || len(rules) != 1 || rules[0].Host != "a.test" {
 		t.Fatalf("throttle: %+v %v", rules, err)
 	}
@@ -180,7 +180,7 @@ func TestScopeThrottleUA(t *testing.T) {
 		t.Errorf("rate rule: %v", add)
 	}
 
-	if err := c.SetUserAgent(ctx, backend.UserAgent{UA: "UA/2", ClientHints: map[string]string{"Sec-CH-UA": ""}}); err != nil {
+	if err := c.SetUserAgent(ctx, proxy.UserAgent{UA: "UA/2", ClientHints: map[string]string{"Sec-CH-UA": ""}}); err != nil {
 		t.Fatal(err)
 	}
 	if f.form("network/action/setDefaultUserAgent").Get("userAgent") != "UA/2" {
@@ -204,7 +204,7 @@ func TestScopeThrottleUA(t *testing.T) {
 
 func TestUnsupported(t *testing.T) {
 	c, _ := setup(t)
-	if err := c.SendToRepeater(context.Background(), backend.Request{}, ""); !errors.Is(err, backend.ErrUnsupported) {
+	if err := c.SendToRepeater(context.Background(), proxy.Request{}, ""); !errors.Is(err, proxy.ErrUnsupported) {
 		t.Errorf("repeater: %v", err)
 	}
 }

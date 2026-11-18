@@ -11,17 +11,17 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/infinite-omicron/hiccup/internal/backend"
+	"github.com/infinite-omicron/hiccup/internal/proxy"
 )
 
 func (a *app) historyCmd() *cobra.Command {
-	var q backend.HistoryQuery
+	var q proxy.HistoryQuery
 	cmd := &cobra.Command{
 		Use:   "history",
 		Short: "List proxy history (newest last)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -47,7 +47,7 @@ func (a *app) historyCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -77,7 +77,7 @@ func (a *app) interceptCmd() *cobra.Command {
 		Args:      cobra.MaximumNArgs(1),
 		ValidArgs: []string{"on", "off"},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -105,7 +105,7 @@ func (a *app) sitemapCmd() *cobra.Command {
 		Short: "List site map entries, optionally under a URL prefix",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -124,7 +124,7 @@ func (a *app) sitemapCmd() *cobra.Command {
 	return cmd
 }
 
-// requestFlags builds a backend.Request from curl-like flags or a raw HTTP file.
+// requestFlags builds a proxy.Request from curl-like flags or a raw HTTP file.
 type requestFlags struct {
 	url, method, data, dataFile, raw, host string
 	headers                                []string
@@ -151,8 +151,8 @@ func readArg(path string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
-func (f *requestFlags) build() (backend.Request, error) {
-	var r backend.Request
+func (f *requestFlags) build() (proxy.Request, error) {
+	var r proxy.Request
 	if f.raw != "" {
 		b, err := readArg(f.raw)
 		if err != nil {
@@ -222,11 +222,11 @@ func (a *app) sendCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
-			out, err := b.Send(cmd.Context(), []backend.Request{r})
+			out, err := b.Send(cmd.Context(), []proxy.Request{r})
 			if err != nil {
 				return err
 			}
@@ -258,7 +258,7 @@ func (a *app) toolCmd(tool string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -285,7 +285,7 @@ func (a *app) scanCmd() *cobra.Command {
 		Args:      cobra.MinimumNArgs(2),
 		ValidArgs: []string{"crawl", "audit", "passive"},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -314,7 +314,7 @@ func (a *app) scopeCmd() *cobra.Command {
 	check := &cobra.Command{
 		Use: "check <url>", Short: "Is a URL in scope?", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -340,7 +340,7 @@ func (a *app) scopeChange(cmd *cobra.Command, urls []string, exclude bool) error
 			urls = []string{s.BaseURL}
 		}
 	}
-	b, err := a.be()
+	b, err := a.proxyClient()
 	if err != nil {
 		return err
 	}
@@ -355,7 +355,7 @@ func (a *app) issuesCmd() *cobra.Command {
 	list := &cobra.Command{
 		Use: "list [prefix]", Short: "List issues, optionally under a URL prefix", Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -371,34 +371,34 @@ func (a *app) issuesCmd() *cobra.Command {
 		},
 	}
 
-	var is backend.Issue
+	var is proxy.Issue
 	var fromFile string
 	add := &cobra.Command{
 		Use:   "add",
 		Short: "Add an issue (flags) or issues (--file JSON array or object, - for stdin)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			var issues []backend.Issue
+			var issues []proxy.Issue
 			if fromFile != "" {
 				data, err := readArg(fromFile)
 				if err != nil {
 					return err
 				}
 				if err := json.Unmarshal(data, &issues); err != nil {
-					var one backend.Issue
+					var one proxy.Issue
 					if err2 := json.Unmarshal(data, &one); err2 != nil {
 						return fmt.Errorf("--file: %w", err)
 					}
-					issues = []backend.Issue{one}
+					issues = []proxy.Issue{one}
 				}
 			} else {
 				if is.Name == "" || is.URL == "" {
 					return fmt.Errorf("--name and --url are required")
 				}
 				is.Severity, is.Confidence = strings.ToUpper(is.Severity), strings.ToUpper(is.Confidence)
-				issues = []backend.Issue{is}
+				issues = []proxy.Issue{is}
 			}
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -421,7 +421,7 @@ func (a *app) issuesCmd() *cobra.Command {
 }
 
 // addIssues posts issues in batches so huge imports don't build one giant request.
-func addIssues(cmd *cobra.Command, b backend.Backend, issues []backend.Issue) (int, error) {
+func addIssues(cmd *cobra.Command, b proxy.Proxy, issues []proxy.Issue) (int, error) {
 	const batch = 50
 	total := 0
 	for i := 0; i < len(issues); i += batch {

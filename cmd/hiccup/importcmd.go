@@ -50,7 +50,7 @@ func (a *app) importNuclei(cmd *cobra.Command, r io.Reader, dry bool) error {
 	if dry {
 		return a.print(issues, "severity", "name", "url")
 	}
-	b, err := a.be()
+	b, err := a.proxyClient()
 	if err != nil {
 		return err
 	}
@@ -85,7 +85,7 @@ func (a *app) runNuclei(cmd *cobra.Command, args []string, noProxy, noImport boo
 	if err != nil {
 		return fmt.Errorf("nuclei not found in PATH (brew install nuclei)")
 	}
-	b, err := a.be()
+	b, err := a.proxyClient()
 	if err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-// Package importers turns other tools' findings into backend issues.
+// Package importers turns other tools' findings into proxy issues.
 package importers
 
 import (
@@ -12,7 +12,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/infinite-omicron/hiccup/internal/backend"
+	"github.com/infinite-omicron/hiccup/internal/proxy"
 )
 
 // nucleiResult is the subset of `nuclei -jsonl` output we use.
@@ -51,8 +51,8 @@ func NucleiSeverity(s string) string {
 }
 
 // Nuclei reads JSONL from r. Lines that aren't results (blank, banners) are skipped.
-func Nuclei(r io.Reader) ([]backend.Issue, error) {
-	var issues []backend.Issue
+func Nuclei(r io.Reader) ([]proxy.Issue, error) {
+	var issues []proxy.Issue
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 1<<20), 64<<20)
 	for n := 1; sc.Scan(); n++ {
@@ -72,7 +72,7 @@ func Nuclei(r io.Reader) ([]backend.Issue, error) {
 	return issues, sc.Err()
 }
 
-func nucleiIssue(r nucleiResult) backend.Issue {
+func nucleiIssue(r nucleiResult) proxy.Issue {
 	target := issueURL(r.MatchedAt, r.Host)
 	name := r.Info.Name
 	if name == "" {
@@ -107,7 +107,7 @@ func nucleiIssue(r nucleiResult) backend.Issue {
 		fmt.Fprintf(&d, "<p>Reproduce:</p><pre>%s</pre>", html.EscapeString(r.CurlCommand))
 	}
 
-	is := backend.Issue{
+	is := proxy.Issue{
 		Name:        "[nuclei] " + name,
 		URL:         target,
 		Severity:    NucleiSeverity(r.Info.Severity),
@@ -116,11 +116,11 @@ func nucleiIssue(r nucleiResult) backend.Issue {
 		Remediation: html.EscapeString(r.Info.Remediation),
 	}
 	if r.Request != "" && strings.HasPrefix(target, "http") {
-		ev := backend.Evidence{URL: target, RequestB64: b64(crlf(r.Request))}
+		ev := proxy.Evidence{URL: target, RequestB64: b64(crlf(r.Request))}
 		if r.Response != "" {
 			ev.ResponseB64 = b64(crlf(r.Response))
 		}
-		is.Evidence = []backend.Evidence{ev}
+		is.Evidence = []proxy.Evidence{ev}
 	}
 	return is
 }

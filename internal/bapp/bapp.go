@@ -48,7 +48,7 @@ type Manifest struct {
 	ProOnly       bool
 }
 
-// Type is the extension type name the backend expects.
+// Type is the extension type name the proxy expects.
 func (m Manifest) Type() string {
 	switch m.ExtensionType {
 	case 2:

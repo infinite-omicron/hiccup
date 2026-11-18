@@ -14,9 +14,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/infinite-omicron/hiccup/internal/backend"
-	"github.com/infinite-omicron/hiccup/internal/backend/burp"
 	"github.com/infinite-omicron/hiccup/internal/config"
+	"github.com/infinite-omicron/hiccup/internal/proxy"
+	"github.com/infinite-omicron/hiccup/internal/proxy/burp"
 )
 
 func (a *app) burpCmd() *cobra.Command {
@@ -38,7 +38,7 @@ func (a *app) burpCmd() *cobra.Command {
 				if err == nil {
 					out := map[string]any{"already_running": true, "url": url, "health": h}
 					if !noBApps && len(a.cfg.Burp.BApps) > 0 {
-						b, err := a.be()
+						b, err := a.proxyClient()
 						if err != nil {
 							return err
 						}
@@ -136,7 +136,7 @@ func (a *app) burpCmd() *cobra.Command {
 			url, _ := cfg.BurpEndpoint()
 			out := map[string]any{"pid": pid, "url": url, "log": logPath, "headless": headless}
 			if !noBApps && len(a.cfg.Burp.BApps) > 0 {
-				b, err := a.be()
+				b, err := a.proxyClient()
 				if err != nil {
 					return err
 				}
@@ -166,11 +166,11 @@ func (a *app) burpCmd() *cobra.Command {
 		Short: "Load extension jar/py/rb files into the running Burp",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
-			var exts []backend.Extension
+			var exts []proxy.Extension
 			for _, f := range args {
 				abs, err := filepath.Abs(expandHome(f))
 				if err != nil {
@@ -179,7 +179,7 @@ func (a *app) burpCmd() *cobra.Command {
 				if _, err := os.Stat(abs); err != nil {
 					return err
 				}
-				exts = append(exts, backend.Extension{Path: abs, Type: typ, Name: name})
+				exts = append(exts, proxy.Extension{Path: abs, Type: typ, Name: name})
 			}
 			r, err := a.installAndWait(cmd, b, exts, reloadWait)
 			if err != nil {
@@ -195,7 +195,7 @@ func (a *app) burpCmd() *cobra.Command {
 	stop := &cobra.Command{
 		Use: "stop", Short: "Shut Burp down cleanly", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -303,7 +303,7 @@ func writeUserConfig(jar string) (string, error) {
 
 // installAndWait loads extensions and, when Burp reloads them all (hiccup
 // included), waits for hiccup to come back and reconnects.
-func (a *app) installAndWait(cmd *cobra.Command, b backend.Backend, exts []backend.Extension, wait time.Duration) (*backend.InstallResult, error) {
+func (a *app) installAndWait(cmd *cobra.Command, b proxy.Proxy, exts []proxy.Extension, wait time.Duration) (*proxy.InstallResult, error) {
 	_, oldToken := a.cfg.BurpEndpoint()
 	r, err := b.InstallExtensions(cmd.Context(), exts)
 	if err != nil {
@@ -315,7 +315,7 @@ func (a *app) installAndWait(cmd *cobra.Command, b backend.Backend, exts []backe
 		if _, err := waitRuntime(ctx, oldToken); err != nil {
 			return r, fmt.Errorf("extensions added, but hiccup did not come back after Burp reloaded extensions: %w", err)
 		}
-		a.backend = nil // the token changed; reconnect on next use
+		a.proxy = nil // the token changed; reconnect on next use
 	}
 	return r, nil
 }

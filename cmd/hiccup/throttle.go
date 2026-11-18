@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/infinite-omicron/hiccup/internal/backend"
 	"github.com/infinite-omicron/hiccup/internal/config"
+	"github.com/infinite-omicron/hiccup/internal/proxy"
 )
 
 func (a *app) throttleCmd() *cobra.Command {
@@ -17,7 +17,7 @@ func (a *app) throttleCmd() *cobra.Command {
 	list := &cobra.Command{
 		Use: "list", Short: "Show active throttle rules", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -32,7 +32,7 @@ func (a *app) throttleCmd() *cobra.Command {
 	apply := &cobra.Command{
 		Use: "apply", Short: "Push every site's throttle (and the selected site's User-Agent) from config", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -62,7 +62,7 @@ func (a *app) throttleCmd() *cobra.Command {
 			if len(args) == 1 {
 				target = args[0]
 			}
-			var rules []backend.ThrottleRule
+			var rules []proxy.ThrottleRule
 			if _, s, err := a.cfg.Site(target); err == nil {
 				t.Backoff, t.MaxConcurrency = keepBackoff(s.Throttle)
 				s.Throttle = t
@@ -78,7 +78,7 @@ func (a *app) throttleCmd() *cobra.Command {
 			} else {
 				return err
 			}
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
@@ -97,14 +97,14 @@ func (a *app) throttleCmd() *cobra.Command {
 	off := &cobra.Command{
 		Use: "off", Short: "Remove all throttle rules", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
 			if err := b.ClearThrottle(cmd.Context()); err != nil {
 				return err
 			}
-			return a.print([]backend.ThrottleRule{})
+			return a.print([]proxy.ThrottleRule{})
 		},
 	}
 	cmd.AddCommand(list, apply, set, off)
@@ -159,7 +159,7 @@ func (a *app) uaCmd() *cobra.Command {
 					return err
 				}
 			}
-			b, err := a.be()
+			b, err := a.proxyClient()
 			if err != nil {
 				return err
 			}
