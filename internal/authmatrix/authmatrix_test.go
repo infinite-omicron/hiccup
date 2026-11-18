@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -228,6 +229,9 @@ func TestRunAndExport(t *testing.T) {
 	out := filepath.Join(dir, "out.xlsx")
 	if err := m.WriteXLSX(out, XLSXOptions{Template: tmpl}); err != nil {
 		t.Fatal(err)
+	}
+	if fi, err := os.Stat(out); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Errorf("workbook mode: %v %v", fi.Mode().Perm(), err)
 	}
 	x, err := excelize.OpenFile(out)
 	if err != nil {
