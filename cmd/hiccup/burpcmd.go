@@ -129,7 +129,7 @@ func (a *app) burpCmd() *cobra.Command {
 				if b, _ := os.ReadFile(logPath); strings.Contains(string(b), "Do you accept the license agreement") {
 					hint = "; Burp is waiting for its EULA to be accepted: run it once yourself, or pass --accept-eula"
 				} else if userCfg == "" {
-					hint = fmt.Sprintf("; if hiccup isn't loaded in this Burp yet, add it once: Extensions → Installed → Add → Java → %s (Burp reloads it on every start)", jar)
+					hint = fmt.Sprintf("; if hiccup isn't loaded in this Burp yet, add it once: Extensions -> Installed -> Add -> Java -> %s (Burp reloads it on every start)", jar)
 				}
 				return fmt.Errorf("burp started (pid %d) but the hiccup API did not come up: %w (see %s)%s", pid, err, logPath, hint)
 			}

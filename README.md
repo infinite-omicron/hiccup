@@ -18,7 +18,7 @@ Output is JSON by default, so agents can parse it; add `--format table` for a hu
 brew install --cask infinite-omicron/tap/hiccup
 ```
 
-Or download a build for macOS, Linux or Windows from [GitHub Releases](https://github.com/infinite-omicron/hiccup/releases). Then load `hiccup-burp.jar` into Burp (Extensions → Installed → Add → Java).
+Or download a build for macOS, Linux or Windows from [GitHub Releases](https://github.com/infinite-omicron/hiccup/releases). Then load `hiccup-burp.jar` into Burp (Extensions -> Installed -> Add -> Java).
 
 ## Quick start
 

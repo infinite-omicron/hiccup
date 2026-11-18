@@ -49,8 +49,8 @@ func singular(s string) string {
 }
 
 // Template turns a URL into a path template, replacing object references
-// with named placeholders: /documents/42 → /documents/${document_id},
-// /upload/report.pdf → /upload/${upload_name}. objectRef reports whether any
+// with named placeholders: /documents/42 -> /documents/${document_id},
+// /upload/report.pdf -> /upload/${upload_name}. objectRef reports whether any
 // placeholder was introduced.
 func Template(rawURL string) (tmpl string, objectRef bool) {
 	u, err := url.Parse(rawURL)

@@ -65,7 +65,7 @@ func (a *app) loginCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&manual, "manual", false, "log in yourself in Burp's browser instead of running the recipe")
 	cmd.Flags().BoolVar(&all, "all", false, "log in every account of the site")
-	cmd.Flags().DurationVar(&timeout, "timeout", 60*time.Second, "time allowed for each login (manual: 5× this)")
+	cmd.Flags().DurationVar(&timeout, "timeout", 60*time.Second, "time allowed for each login (manual: 5x this)")
 	return cmd
 }
 

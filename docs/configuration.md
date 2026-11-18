@@ -49,9 +49,9 @@ hiccup reads `~/.hiccup/config.json`.
 
 Syncing the auth matrix workbook to OneDrive or SharePoint (`matrix export --m365`) signs in through an Entra ID (Azure AD) app registration in your tenant. Register one once:
 
-1. Entra admin center → App registrations → New registration. Supported account types: this organizational directory.
-2. Authentication → *Allow public client flows* → Yes (the device-code flow needs it). No redirect URI or client secret is needed.
-3. API permissions → Microsoft Graph → Delegated → `Files.ReadWrite.All`. Users can usually consent to this themselves; your tenant may require an admin to grant it.
+1. Entra admin center -> App registrations -> New registration. Supported account types: this organizational directory.
+2. Authentication -> *Allow public client flows* -> Yes (the device-code flow needs it). No redirect URI or client secret is needed.
+3. API permissions -> Microsoft Graph -> Delegated -> `Files.ReadWrite.All`. Users can usually consent to this themselves; your tenant may require an admin to grant it.
 
 Then:
 

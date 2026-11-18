@@ -6,7 +6,7 @@ Requires Go 1.27+ and a JDK 17+ (the Gradle wrapper fetches Gradle).
 
 ```sh
 make                          # dist/hiccup-burp.jar and dist/hiccup
-make dist                     # also cross-compiles hiccup for darwin/linux/windows × amd64/arm64
+make dist                     # also cross-compiles hiccup for darwin/linux/windows x amd64/arm64
 make install                  # copies the jar to ~/.hiccup/ where `hiccup burp start` finds it
 make test
 make release VERSION=v1.2.3   # the release assets, in dist/release/
@@ -38,9 +38,9 @@ make release VERSION=v1.2.3   # the release assets, in dist/release/
 
 Releases follow [SemVer](https://semver.org) and are cut by [release-please](https://github.com/googleapis/release-please). It keeps a release PR open with the next version and `CHANGELOG.md`, computed from the commits:
 
-- `fix` → patch
-- `feat` → minor
-- `!` or a `BREAKING CHANGE:` footer → major (minor while the version is still 0.x)
+- `fix` -> patch
+- `feat` -> minor
+- `!` or a `BREAKING CHANGE:` footer -> major (minor while the version is still 0.x)
 
 Merging the release PR tags `vX.Y.Z` and publishes the GitHub Release. The Release workflow then:
 

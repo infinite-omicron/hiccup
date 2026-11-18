@@ -5,13 +5,13 @@ Every network port hiccup uses, what listens on it, and how to change it. Everyt
 | Port | What listens | Default set by | Change it with |
 |---|---|---|---|
 | **8099** | hiccup's REST API inside Burp (the `hiccup-burp.jar` extension) | the extension | `HICCUP_BURP_PORT` in Burp's environment (`hiccup burp start` passes yours through) |
-| **8080** | Burp's proxy listener | Burp | Burp → Proxy → Proxy settings. hiccup uses Burp's first running listener |
+| **8080** | Burp's proxy listener | Burp | Burp -> Proxy -> Proxy settings. hiccup uses Burp's first running listener |
 | **9222** | the browser's CDP (Chrome DevTools Protocol) endpoint | `hiccup browser launch` | `hiccup browser launch --port <n>` |
 | **9223** | `hiccup browser relay`: the CDP endpoint without Burp's auth header, for Selenium | `hiccup browser relay` | `hiccup browser relay --listen 127.0.0.1:<n>` |
 | **8082** | mitmproxy's proxy listener | `hiccup mitm start` | `"mitm": {"proxy": "127.0.0.1:<n>"}` in config |
 | **8097** | hiccup's REST API inside mitmproxy (the addon) | `hiccup mitm start` | `"mitm": {"api_port": <n>}` in config |
 | **8090** | ZAP's API and proxy (ZAP serves both on one port) | hiccup's ZAP default | start ZAP with `-port <n>` and set `"zap": {"url": "http://127.0.0.1:<n>"}` or `HICCUP_ZAP_URL` |
-| random | one-time callback during `hiccup google login` | the OS picks a free port | — (closed as soon as you've signed in) |
+| random | one-time callback during `hiccup google login` | the OS picks a free port | none (closed as soon as you've signed in) |
 | **18081** | `testdata/authapp/app.py`, the test app for the auth matrix | the test app | `python3 testdata/authapp/app.py <port>` |
 
 ## Why these numbers
