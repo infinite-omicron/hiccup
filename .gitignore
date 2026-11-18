@@ -1,0 +1,5 @@
+/dist/
+/extension/build/
+/extension/.gradle/
+*.jsonl
+.DS_Store
