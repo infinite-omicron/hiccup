@@ -40,7 +40,7 @@ func Path(site, account string) string {
 func Load(site, account string) (*Session, error) {
 	b, err := os.ReadFile(Path(site, account))
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("no session for %s/%s (run: hiccup login %s %s)", site, account, site, account)
+		return nil, fmt.Errorf("no session for %s/%s (run: hiccup login --site %s %s)", site, account, site, account)
 	}
 	if err != nil {
 		return nil, err
