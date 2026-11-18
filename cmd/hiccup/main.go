@@ -68,6 +68,8 @@ func main() {
 		a.runCmd(),
 		a.configCmd(),
 		a.credsCmd(),
+		a.loginCmd(),
+		a.matrixCmd(),
 		a.burpCmd(),
 	)
 
