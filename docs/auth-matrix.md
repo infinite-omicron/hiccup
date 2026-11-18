@@ -64,6 +64,31 @@ Content -> Documents -> Shared        (a tab on the Documents page, found at --d
 
 **Links that do something:** recording (and `map --depth 2` or more) opens every link with a GET request. Some admin menus run an action on GET, for example Drupal's *Flush all caches*. To skip one, add a regex for its URL or menu path to the site's `exclude` list, e.g. `"exclude": ["/admin/flush", "Flush all caches"]`. Logout is always skipped.
 
+## Parallel accounts (Burp)
+
+With `--parallel`, every account gets **its own browser on its own Burp proxy listener**, so all accounts can log in, record and be browsed by hand at the same time. Burp's Proxy history records which listener every request came through, so each request is tied to the account that sent it, however their traffic interleaves.
+
+```sh
+hiccup login --all --parallel                  # one window per account, all logged in at once
+hiccup matrix record --all --parallel          # every account crawls its nav at the same time
+hiccup history --as user2                      # just user2's traffic
+hiccup browser nav --as user1 https://target.test/reports
+```
+
+Recording by hand, in several windows at once:
+
+```sh
+hiccup matrix record --as admin1,user1 --manual --parallel
+hiccup matrix mark --as admin1 "Create Document"    # before each action, per account
+hiccup matrix mark --as user1 "Create Document"
+hiccup matrix stop --all
+```
+
+- **Ports:** accounts get listeners from the site's `listener_base` (default 8181) in the order of `hiccup creds list`, unless an account sets `proxy_port`. Each browser's CDP port is its listener + 1000 (8181 -> 9181). See [ports.md](ports.md).
+- **Browsers:** each one uses its own profile (`~/.hiccup/browser-profile-<account>`), so cookies never mix. They stay open after the command. `hiccup browser list` shows them; `hiccup browser stop --all` closes them.
+- **Listeners:** they stay in Burp until you remove them with `hiccup burp listeners --remove`, which only removes the ones hiccup added. Unloading the extension doesn't remove them, because Burp reloads every extension whenever one is installed. `hiccup burp listeners` lists them, and `--add-site` adds every account's.
+- `--headless` runs the browsers without windows. ZAP and mitmproxy don't support per-account listeners yet (exit code 3).
+
 ## How it works
 
 - **Recording:**

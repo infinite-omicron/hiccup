@@ -13,7 +13,9 @@ hiccup browser cdp                            # CDP endpoint, websocket URL and 
 hiccup browser stop
 ```
 
-`nav`, `eval`, `screenshot`, `html` and `info` act on the current tab; `--new-tab` opens one instead.
+`nav`, `eval`, `screenshot`, `html` and `info` act on the current tab; `--new-tab` opens one instead. `--as <account>` works on that account's own browser (see [auth-matrix.md](auth-matrix.md#parallel-accounts-burp)); `browser launch --all` starts one per account and `browser list` shows them.
+
+Browsers hiccup launches have Chrome's password manager turned off in their profile. Otherwise Chrome sends a hash of every password you type to Google's leak-check service, which would leak test credentials and clutter history.
 
 ## Which browser
 
