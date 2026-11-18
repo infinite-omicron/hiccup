@@ -187,6 +187,22 @@ public class Api {
             case "POST /extensions/install" -> installExtension(obj(body));
             case "GET /options/user" -> JsonParser.parseString(api.burpSuite().exportUserOptionsAsJson(paths(q)));
             case "GET /options/project" -> JsonParser.parseString(api.burpSuite().exportProjectOptionsAsJson(paths(q)));
+            case "POST /shutdown" -> {
+                // Clean exit, so Burp saves user options (~/.BurpSuite/UserConfig*.json).
+                Thread t = new Thread(() -> {
+                    try {
+                        Thread.sleep(300);
+                    } catch (InterruptedException ignored) {
+                    }
+                    api.burpSuite().shutdown();
+                }, "hiccup-shutdown");
+                t.start();
+                yield Map.of("ok", true);
+            }
+            case "POST /options/user" -> {
+                api.burpSuite().importUserOptionsFromJson(GSON.toJson(obj(body)));
+                yield Map.of("ok", true);
+            }
             default -> throw new HttpError(404, "no route for " + key);
         };
     }
@@ -400,6 +416,7 @@ public class Api {
         JsonArray exts = extender.has("extensions") ? extender.getAsJsonArray("extensions") : new JsonArray();
         List<String> added = new ArrayList<>();
         List<String> already = new ArrayList<>();
+        boolean removed = false;
         for (JsonElement w : wanted) {
             JsonObject x = w.getAsJsonObject();
             String file = req(x, "path");
@@ -407,9 +424,14 @@ public class Api {
                     : file.endsWith(".py") ? "python" : file.endsWith(".rb") ? "ruby" : "java";
             String name = x.has("name") ? str(x, "name") : java.nio.file.Path.of(file).getFileName().toString();
             boolean present = false;
-            for (JsonElement e : exts) {
-                JsonObject ex = e.getAsJsonObject();
-                if (ex.has("extension_file") && file.equals(ex.get("extension_file").getAsString())) present = true;
+            for (var it = exts.iterator(); it.hasNext(); ) {
+                JsonObject ex = it.next().getAsJsonObject();
+                if (ex.has("extension_file") && file.equals(ex.get("extension_file").getAsString())) {
+                    present = true;
+                } else if (x.has("name") && ex.has("name") && name.equals(ex.get("name").getAsString())) {
+                    it.remove(); // an older version of the same extension (e.g. a previous BApp serial)
+                    removed = true;
+                }
             }
             if (present) {
                 already.add(file);
@@ -427,7 +449,8 @@ public class Api {
             exts.add(ext);
             added.add(file);
         }
-        if (!added.isEmpty()) {
+        boolean changed = !added.isEmpty() || removed;
+        if (changed) {
             extender.add("extensions", exts);
             String patch = GSON.toJson(root);
             Thread t = new Thread(() -> {
@@ -441,7 +464,7 @@ public class Api {
             t.setDaemon(true);
             t.start();
         }
-        return Map.of("added", added, "already", already, "reloading", !added.isEmpty());
+        return Map.of("added", added, "already", already, "reloading", changed);
     }
 
     // ---- request building / serialization ----

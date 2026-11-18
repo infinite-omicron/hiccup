@@ -71,6 +71,7 @@ func main() {
 		a.loginCmd(),
 		a.matrixCmd(),
 		a.burpCmd(),
+		a.bappCmd(),
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)

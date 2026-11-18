@@ -5,6 +5,7 @@ package backend
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 )
 
 type Backend interface {
@@ -41,6 +42,13 @@ type Backend interface {
 	// InstallExtensions loads extension files. Burp may reload every extension
 	// (the hiccup one too), so callers must reconnect when Reloading is true.
 	InstallExtensions(ctx context.Context, exts []Extension) (*InstallResult, error)
+
+	// UserOptions exports Burp user options (optionally only the given paths,
+	// e.g. "user_options.extender.python"); SetUserOptions imports a fragment.
+	UserOptions(ctx context.Context, paths ...string) (json.RawMessage, error)
+	SetUserOptions(ctx context.Context, fragment json.RawMessage) error
+
+	Shutdown(ctx context.Context) error
 }
 
 type BrowserOptions struct {

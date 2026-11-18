@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/infinite-omicron/hiccup/internal/backend"
@@ -232,6 +233,23 @@ func (c *Client) InstallExtensions(ctx context.Context, exts []backend.Extension
 		return nil, err
 	}
 	return &r, nil
+}
+
+func (c *Client) UserOptions(ctx context.Context, paths ...string) (json.RawMessage, error) {
+	q := url.Values{}
+	if len(paths) > 0 {
+		q.Set("paths", strings.Join(paths, ","))
+	}
+	var out json.RawMessage
+	return out, c.do(ctx, "GET", "/options/user", q, nil, &out)
+}
+
+func (c *Client) SetUserOptions(ctx context.Context, fragment json.RawMessage) error {
+	return c.do(ctx, "POST", "/options/user", nil, fragment, nil)
+}
+
+func (c *Client) Shutdown(ctx context.Context) error {
+	return c.do(ctx, "POST", "/shutdown", nil, nil, nil)
 }
 
 // WaitReady polls /health until the extension answers or ctx ends.
