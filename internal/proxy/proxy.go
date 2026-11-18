@@ -16,9 +16,18 @@ var ErrUnsupported = errors.New("not supported by this proxy")
 type Proxy interface {
 	Health(ctx context.Context) (map[string]any, error)
 
+	// Browsers are named ("" is the default one), so each account can have its own.
 	BrowserLaunch(ctx context.Context, opts BrowserOptions) (*BrowserStatus, error)
-	BrowserStatus(ctx context.Context) (*BrowserStatus, error)
-	BrowserStop(ctx context.Context) (*BrowserStatus, error)
+	BrowserStatus(ctx context.Context, name string) (*BrowserStatus, error)
+	BrowserStop(ctx context.Context, name string) (*BrowserStatus, error)
+	Browsers(ctx context.Context) ([]BrowserStatus, error)
+
+	// Listeners are the proxy's listening ports. hiccup adds one per account
+	// so history shows which account sent each request.
+	Listeners(ctx context.Context) ([]Listener, error)
+	AddListeners(ctx context.Context, ports []int) ([]Listener, error)
+	// RemoveListeners removes ports, or every listener hiccup added when ports is empty.
+	RemoveListeners(ctx context.Context, ports []int) ([]Listener, error)
 
 	Intercept(ctx context.Context) (bool, error)
 	SetIntercept(ctx context.Context, enabled bool) (bool, error)
@@ -57,7 +66,10 @@ type Proxy interface {
 }
 
 type BrowserOptions struct {
-	URL      string `json:"url,omitempty"`
+	Name string `json:"name,omitempty"` // "" is the default browser
+	// ProxyPort sends the browser through that proxy listener instead of the first one.
+	ProxyPort int    `json:"proxy_port,omitempty"`
+	URL       string `json:"url,omitempty"`
 	Port     int    `json:"port,omitempty"`
 	UA       string `json:"ua,omitempty"`
 	Headless bool   `json:"headless,omitempty"`
@@ -68,7 +80,9 @@ type BrowserOptions struct {
 }
 
 type BrowserStatus struct {
+	Name    string `json:"name,omitempty"`
 	Running bool   `json:"running"`
+	Proxy   string `json:"proxy,omitempty"` // host:port of the listener it uses
 	PID     int    `json:"pid,omitempty"`
 	CDP     string `json:"cdp,omitempty"`   // http://127.0.0.1:<port>
 	WS      string `json:"ws,omitempty"`    // browser websocket URL
@@ -76,6 +90,7 @@ type BrowserStatus struct {
 }
 
 type HistoryQuery struct {
+	Listener int // only requests that came through this listener port (0: all)
 	Contains string
 	Since    int // only items with id > Since; -1 for all
 	Limit    int
@@ -91,6 +106,16 @@ type Summary struct {
 	Status *int   `json:"status"`
 	Length *int   `json:"length,omitempty"`
 	MIME   string `json:"mime,omitempty"`
+	// ListenerPort is the proxy listener the request came through.
+	ListenerPort int `json:"listener_port,omitempty"`
+}
+
+// Listener is a proxy listening port.
+type Listener struct {
+	Port       int    `json:"port"`
+	ListenMode string `json:"listen_mode,omitempty"`
+	Running    bool   `json:"running"`
+	Hiccup     bool   `json:"hiccup"` // added by hiccup (removable with burp listeners --remove)
 }
 
 // Request is either URL-based (URL, Method, Headers, Body) or raw (Raw + URL or Host/Port/HTTPS).
@@ -109,6 +134,7 @@ type Request struct {
 // Exchange is a full request/response pair.
 type Exchange struct {
 	ID              int         `json:"id,omitempty"`
+	ListenerPort    int         `json:"listener_port,omitempty"`
 	Time            string      `json:"time,omitempty"`
 	Method          string      `json:"method"`
 	URL             string      `json:"url"`

@@ -23,33 +23,66 @@ import java.util.stream.Stream;
  * CDP, so we start the same binary ourselves.
  */
 public class Browser {
+    /** The browser started without a name (one per Burp, as before). */
+    public static final String DEFAULT = "default";
+
     private final MontoyaApi api;
     private final Throttle throttle;
     private static final java.util.regex.Pattern DEVTOOLS =
             java.util.regex.Pattern.compile("DevTools listening on (ws://\\S+)(?: with token (\\S+))?");
+    private static final java.util.regex.Pattern NAME = java.util.regex.Pattern.compile("[A-Za-z0-9._-]{1,64}");
 
-    private Process process;
-    private int cdpPort;
-    // Burp's Chromium build prints its CDP websocket URL and an auth token at
-    // start-up; its HTTP endpoints (/json/*) need the token in x-burp-authorization.
-    private volatile String wsUrl;
-    private volatile String token;
+    /** One launched Chromium: its own CDP port, proxy and profile. */
+    private static final class Instance {
+        Process process;
+        int cdpPort;
+        String proxy;
+        // Burp's Chromium build prints its CDP websocket URL and an auth token at
+        // start-up; its HTTP endpoints (/json/*) need the token in x-burp-authorization.
+        volatile String wsUrl;
+        volatile String token;
+
+        boolean alive() {
+            return process != null && process.isAlive();
+        }
+    }
+
+    private final Map<String, Instance> instances = new LinkedHashMap<>();
 
     public Browser(MontoyaApi api, Throttle throttle) {
         this.api = api;
         this.throttle = throttle;
     }
 
-    public synchronized Map<String, Object> launch(String url, int port, String ua, boolean headless, String binary)
-            throws IOException {
-        if (process != null && process.isAlive()) {
-            return status();
+    static String name(String name) {
+        if (name == null || name.isBlank()) return DEFAULT;
+        if (!NAME.matcher(name).matches()) throw new IllegalArgumentException("bad browser name: " + name);
+        return name;
+    }
+
+    /**
+     * Launches the named browser (or returns its status if it's running). With
+     * proxyPort > 0 it uses that Burp listener, otherwise Burp's first one.
+     */
+    public synchronized Map<String, Object> launch(String name, String url, int port, int proxyPort, String ua,
+                                                   boolean headless, String binary) throws IOException {
+        name = name(name);
+        Instance running = instances.get(name);
+        if (running != null && running.alive()) {
+            return status(name);
+        }
+        for (var e : instances.entrySet()) {
+            if (e.getValue().alive() && e.getValue().cdpPort == port) {
+                throw new IOException("CDP port " + port + " is used by browser \"" + e.getKey() + "\"");
+            }
         }
         Path chromium = binary != null && !binary.isBlank() ? Path.of(binary) : findChromium()
                 .orElseThrow(() -> new IOException("Burp's bundled Chromium not found; pass \"binary\""));
-        String proxy = proxyListener();
-        Path profile = Extension.hiccupHome().resolve("browser-profile");
+        String proxy = proxyPort > 0 ? "127.0.0.1:" + proxyPort : proxyListener();
+        String suffix = DEFAULT.equals(name) ? "" : "-" + name;
+        Path profile = Extension.hiccupHome().resolve("browser-profile" + suffix);
         Files.createDirectories(profile);
+        disablePasswordManager(profile);
 
         if (ua == null || ua.isBlank()) ua = throttle.userAgent();
         List<String> cmd = new ArrayList<>(List.of(
@@ -65,31 +98,58 @@ public class Browser {
                 "--no-default-browser-check",
                 "--disable-background-networking",
                 "--disable-component-update",
-                "--disable-sync"));
+                "--disable-sync",
+                "--password-store=basic"));
         if (ua != null) cmd.add("--user-agent=" + ua);
         if (headless) cmd.add("--headless=new");
         cmd.add(url == null || url.isBlank() ? "about:blank" : url);
 
-        wsUrl = null;
-        token = null;
-        process = new ProcessBuilder(cmd).redirectErrorStream(true).start();
-        cdpPort = port;
-        watchOutput(process, Extension.hiccupHome().resolve("browser.log"));
-        api.logging().logToOutput("hiccup: launched " + chromium + " (CDP 127.0.0.1:" + port + ", proxy " + proxy + ")");
-        awaitDevTools(30_000);
-        return status();
+        Instance in = new Instance();
+        in.process = new ProcessBuilder(cmd).redirectErrorStream(true).start();
+        in.cdpPort = port;
+        in.proxy = proxy;
+        instances.put(name, in);
+        watchOutput(in, Extension.hiccupHome().resolve("browser" + suffix + ".log"));
+        api.logging().logToOutput("hiccup: launched browser \"" + name + "\" (CDP 127.0.0.1:" + port + ", proxy " + proxy + ")");
+        awaitDevTools(in, 30_000);
+        return status(name);
+    }
+
+    /**
+     * Turns the profile's password manager off, which also stops Chrome's
+     * password-leak lookups to Google: those would send a hash of the test
+     * credentials and clutter history. Flags can't do this in current builds.
+     */
+    static void disablePasswordManager(Path profile) throws IOException {
+        Path prefs = profile.resolve("Default").resolve("Preferences");
+        Files.createDirectories(prefs.getParent());
+        com.google.gson.JsonObject root = new com.google.gson.JsonObject();
+        if (Files.exists(prefs)) {
+            try {
+                root = com.google.gson.JsonParser.parseString(Files.readString(prefs)).getAsJsonObject();
+            } catch (RuntimeException ignored) {
+                // Unreadable preferences: start over with just ours.
+            }
+        }
+        root.addProperty("credentials_enable_service", false);
+        com.google.gson.JsonObject prof = root.has("profile") && root.get("profile").isJsonObject()
+                ? root.getAsJsonObject("profile") : new com.google.gson.JsonObject();
+        prof.addProperty("password_manager_enabled", false);
+        prof.addProperty("password_manager_leak_detection", false);
+        root.add("profile", prof);
+        Files.writeString(prefs, root.toString());
     }
 
     /** Copies browser output to a log file and picks out the DevTools line. */
-    private void watchOutput(Process p, Path log) {
+    private void watchOutput(Instance in, Path log) {
         Thread t = new Thread(() -> {
-            try (var in = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()));
+            try (var reader = new java.io.BufferedReader(new java.io.InputStreamReader(in.process.getInputStream()));
                  var out = Files.newBufferedWriter(log)) {
-                for (String line; (line = in.readLine()) != null; ) {
+                for (String line; (line = reader.readLine()) != null; ) {
                     var m = DEVTOOLS.matcher(line);
                     if (m.find()) {
-                        wsUrl = m.group(1);
-                        token = m.group(2);
+                        in.wsUrl = m.group(1);
+                        in.token = m.group(2);
                     }
                     out.write(line);
                     out.newLine();
@@ -102,23 +162,36 @@ public class Browser {
         t.start();
     }
 
-    public synchronized Map<String, Object> status() {
+    public synchronized Map<String, Object> status(String name) {
+        name = name(name);
+        Instance in = instances.get(name);
         Map<String, Object> m = new LinkedHashMap<>();
-        boolean running = process != null && process.isAlive();
+        m.put("name", name);
+        boolean running = in != null && in.alive();
         m.put("running", running);
         if (running) {
-            m.put("pid", process.pid());
-            m.put("cdp", "http://127.0.0.1:" + cdpPort);
-            m.put("ws", wsUrl);
-            m.put("token", token);
+            m.put("pid", in.process.pid());
+            m.put("cdp", "http://127.0.0.1:" + in.cdpPort);
+            m.put("ws", in.wsUrl);
+            m.put("token", in.token);
+            m.put("proxy", in.proxy);
         }
         return m;
     }
 
+    /** Status of every browser that is running. */
+    public synchronized List<Map<String, Object>> statusAll() {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (String name : instances.keySet()) {
+            if (instances.get(name).alive()) out.add(status(name));
+        }
+        return out;
+    }
+
     /** Waits briefly for the DevTools line so launch can return the websocket URL. */
-    void awaitDevTools(long millis) {
+    private static void awaitDevTools(Instance in, long millis) {
         long end = System.currentTimeMillis() + millis;
-        while (wsUrl == null && process != null && process.isAlive() && System.currentTimeMillis() < end) {
+        while (in.wsUrl == null && in.alive() && System.currentTimeMillis() < end) {
             try {
                 Thread.sleep(100);
             } catch (InterruptedException e) {
@@ -128,11 +201,15 @@ public class Browser {
         }
     }
 
-    public synchronized void stop() {
-        if (process == null) return;
-        process.descendants().forEach(ProcessHandle::destroy);
-        process.destroy();
-        process = null;
+    public synchronized void stop(String name) {
+        Instance in = instances.remove(name(name));
+        if (in == null || in.process == null) return;
+        in.process.descendants().forEach(ProcessHandle::destroy);
+        in.process.destroy();
+    }
+
+    public synchronized void stopAll() {
+        for (String name : new ArrayList<>(instances.keySet())) stop(name);
     }
 
     /** "host:port" of the first running proxy listener, defaulting to 127.0.0.1:8080. */

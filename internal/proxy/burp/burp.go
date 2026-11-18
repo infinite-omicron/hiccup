@@ -100,14 +100,42 @@ func (c *Client) BrowserLaunch(ctx context.Context, o proxy.BrowserOptions) (*pr
 	return &s, nil
 }
 
-func (c *Client) BrowserStatus(ctx context.Context) (*proxy.BrowserStatus, error) {
+func (c *Client) BrowserStatus(ctx context.Context, name string) (*proxy.BrowserStatus, error) {
 	var s proxy.BrowserStatus
-	return &s, c.do(ctx, "GET", "/browser", nil, nil, &s)
+	q := url.Values{}
+	if name != "" {
+		q.Set("name", name)
+	}
+	return &s, c.do(ctx, "GET", "/browser", q, nil, &s)
 }
 
-func (c *Client) BrowserStop(ctx context.Context) (*proxy.BrowserStatus, error) {
+func (c *Client) BrowserStop(ctx context.Context, name string) (*proxy.BrowserStatus, error) {
 	var s proxy.BrowserStatus
-	return &s, c.do(ctx, "POST", "/browser/stop", nil, nil, &s)
+	return &s, c.do(ctx, "POST", "/browser/stop", nil, map[string]string{"name": name}, &s)
+}
+
+func (c *Client) Browsers(ctx context.Context) ([]proxy.BrowserStatus, error) {
+	var out []proxy.BrowserStatus
+	return out, c.do(ctx, "GET", "/browsers", nil, nil, &out)
+}
+
+func (c *Client) Listeners(ctx context.Context) ([]proxy.Listener, error) {
+	var out []proxy.Listener
+	return out, c.do(ctx, "GET", "/proxy/listeners", nil, nil, &out)
+}
+
+func (c *Client) AddListeners(ctx context.Context, ports []int) ([]proxy.Listener, error) {
+	var out []proxy.Listener
+	return out, c.do(ctx, "POST", "/proxy/listeners", nil, map[string][]int{"ports": ports}, &out)
+}
+
+func (c *Client) RemoveListeners(ctx context.Context, ports []int) ([]proxy.Listener, error) {
+	var out []proxy.Listener
+	body := map[string][]int{}
+	if len(ports) > 0 {
+		body["ports"] = ports
+	}
+	return out, c.do(ctx, "DELETE", "/proxy/listeners", nil, body, &out)
 }
 
 func (c *Client) Intercept(ctx context.Context) (bool, error) {
@@ -133,6 +161,9 @@ func (c *Client) History(ctx context.Context, h proxy.HistoryQuery) ([]proxy.Sum
 	}
 	if h.InScope {
 		q.Set("in_scope", "true")
+	}
+	if h.Listener > 0 {
+		q.Set("listener", strconv.Itoa(h.Listener))
 	}
 	var out []proxy.Summary
 	return out, c.do(ctx, "GET", "/proxy/history", q, nil, &out)
