@@ -133,7 +133,7 @@ func (m *Matrix) Grid() *Grid {
 						line = fmt.Sprintf("%d %s", c.Status, c.Verdict)
 					}
 					if c.Finding != "" {
-						line = FindingLabel(c.Finding) + " - " + line
+						line += " (" + FindingLabel(c.Finding) + ")"
 					}
 					actual = append(actual, req+" -> "+line)
 					switch {
@@ -247,19 +247,20 @@ func (m *Matrix) WriteXLSX(path string, o XLSXOptions) error {
 	return os.Chmod(path, 0o600)
 }
 
-// FindingLabel is how a finding reads in workbooks and Burp issues. The
-// classification is a heuristic, so findings are worded as potential issues
-// to confirm by hand. JSON, CSV and `matrix run` keep the short codes.
+// FindingLabel is how a finding reads in workbooks and Burp issues, e.g.
+// "GET /api/export -> 200 allowed (Forceful Browsing)". The classification is
+// a heuristic, so escalations are worded as potential. JSON, CSV and
+// `matrix run` keep the short codes.
 func FindingLabel(finding string) string {
 	switch finding {
 	case "vertical":
-		return "Potential vertical privilege escalation"
+		return "Potential Vertical Privilege Escalation"
 	case "horizontal":
-		return "Potential horizontal privilege escalation (IDOR)"
+		return "Potential Horizontal Privilege Escalation"
 	case "forceful-browsing":
-		return "Potential unauthenticated access (forceful browsing)"
+		return "Forceful Browsing"
 	case "review":
-		return "Needs review"
+		return "Needs Review"
 	}
 	return finding
 }
