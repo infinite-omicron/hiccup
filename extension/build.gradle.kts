@@ -2,6 +2,9 @@ plugins {
     java
 }
 
+// Set by `make` / CI from the git tag, e.g. -PhiccupVersion=v0.2.0.
+version = (findProperty("hiccupVersion") as String?) ?: "dev"
+
 repositories {
     mavenCentral()
 }
@@ -18,6 +21,9 @@ tasks.withType<JavaCompile>().configureEach {
 
 tasks.jar {
     archiveFileName.set("hiccup-burp.jar")
+    manifest {
+        attributes("Implementation-Title" to "hiccup-burp", "Implementation-Version" to project.version)
+    }
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from(configurations.runtimeClasspath.get().filter { it.isDirectory }.map { it } +
         configurations.runtimeClasspath.get().filter { !it.isDirectory }.map { zipTree(it) }) {
