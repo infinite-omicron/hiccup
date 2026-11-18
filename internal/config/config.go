@@ -125,6 +125,9 @@ type Site struct {
 	NavSelector string `json:"nav_selector,omitempty"`
 	// Exclude are URL regexes never recorded or replayed (logout is always excluded).
 	Exclude []string `json:"exclude,omitempty"`
+	// ListenerBase is the first proxy listener port for per-account browsers
+	// (--parallel): accounts get ListenerBase, ListenerBase+1, ... (default 8181).
+	ListenerBase int `json:"listener_base,omitempty"`
 }
 
 type Throttle struct {
@@ -174,6 +177,44 @@ type Account struct {
 	Username string `json:"username,omitempty"`
 	// Password is plaintext, "env:VAR", or "keychain:service/account".
 	Password string `json:"password,omitempty"`
+	// ProxyPort pins this account's proxy listener for --parallel.
+	ProxyPort int `json:"proxy_port,omitempty"`
+}
+
+// DefaultListenerBase is the first per-account listener port.
+const DefaultListenerBase = 8181
+
+// CDPOffset is added to an account's listener port to get its browser's CDP port.
+const CDPOffset = 1000
+
+// AccountPorts assigns each account a proxy listener port for --parallel: its
+// own proxy_port, or the next free port from listener_base, in the order of
+// Accounts (highest level first, then by name).
+func (s *Site) AccountPorts() map[string]int {
+	base := s.ListenerBase
+	if base == 0 {
+		base = DefaultListenerBase
+	}
+	out := map[string]int{}
+	used := map[int]bool{}
+	for _, r := range s.Accounts() {
+		if p := r.Account.ProxyPort; p != 0 {
+			out[r.Account.Name] = p
+			used[p] = true
+		}
+	}
+	next := base
+	for _, r := range s.Accounts() {
+		if _, ok := out[r.Account.Name]; ok {
+			continue
+		}
+		for used[next] {
+			next++
+		}
+		out[r.Account.Name] = next
+		used[next] = true
+	}
+	return out
 }
 
 // Home is $HICCUP_HOME or ~/.hiccup.

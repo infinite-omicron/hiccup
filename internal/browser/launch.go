@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/infinite-omicron/hiccup/internal/config"
@@ -98,6 +99,9 @@ func (l *Launcher) Launch(ctx context.Context, o proxy.BrowserOptions) (*proxy.B
 	if err := os.MkdirAll(profile, 0o700); err != nil {
 		return nil, err
 	}
+	if err := DisablePasswordManager(profile); err != nil {
+		return nil, err
+	}
 	args := []string{
 		fmt.Sprintf("--remote-debugging-port=%d", port),
 		"--remote-debugging-address=127.0.0.1",
@@ -108,6 +112,7 @@ func (l *Launcher) Launch(ctx context.Context, o proxy.BrowserOptions) (*proxy.B
 		"--ignore-certificate-errors",
 		"--no-first-run", "--no-default-browser-check",
 		"--disable-background-networking", "--disable-component-update", "--disable-sync",
+		"--password-store=basic",
 	}
 	if o.UA != "" {
 		args = append(args, "--user-agent="+o.UA)
@@ -197,4 +202,93 @@ func writeState(path string, st launchState) error {
 		return err
 	}
 	return os.WriteFile(path, b, 0o600)
+}
+
+// Launchers runs named local browsers through one proxy (ZAP, mitmproxy):
+// "" is the default browser, other names get their own profile and state.
+type Launchers struct {
+	Prefix string // proxy name, e.g. "zap"
+	Proxy  string // host:port of the proxy listener
+}
+
+func (l *Launchers) launcher(name string) *Launcher {
+	n := l.Prefix
+	if name != "" {
+		n += "-" + name
+	}
+	return &Launcher{Name: n, Proxy: l.Proxy}
+}
+
+func (l *Launchers) Launch(ctx context.Context, o proxy.BrowserOptions) (*proxy.BrowserStatus, error) {
+	if o.ProxyPort != 0 {
+		return nil, fmt.Errorf("%s: per-account proxy listeners: %w", l.Prefix, proxy.ErrUnsupported)
+	}
+	st, err := l.launcher(o.Name).Launch(ctx, o)
+	if st != nil {
+		st.Name, st.Proxy = o.Name, l.Proxy
+	}
+	return st, err
+}
+
+func (l *Launchers) Status(ctx context.Context, name string) (*proxy.BrowserStatus, error) {
+	st, err := l.launcher(name).Status(ctx)
+	if st != nil {
+		st.Name = name
+		if st.Running {
+			st.Proxy = l.Proxy
+		}
+	}
+	return st, err
+}
+
+func (l *Launchers) Stop(ctx context.Context, name string) (*proxy.BrowserStatus, error) {
+	st, err := l.launcher(name).Stop(ctx)
+	if st != nil {
+		st.Name = name
+	}
+	return st, err
+}
+
+// All returns every running browser.
+func (l *Launchers) All(ctx context.Context) ([]proxy.BrowserStatus, error) {
+	files, err := filepath.Glob(filepath.Join(config.Home(), "browser-"+l.Prefix+"*.json"))
+	if err != nil {
+		return nil, err
+	}
+	var out []proxy.BrowserStatus
+	for _, f := range files {
+		base := strings.TrimSuffix(filepath.Base(f), ".json")
+		name := strings.TrimPrefix(strings.TrimPrefix(base, "browser-"+l.Prefix), "-")
+		if st, err := l.Status(ctx, name); err == nil && st.Running {
+			out = append(out, *st)
+		}
+	}
+	return out, nil
+}
+
+// DisablePasswordManager turns a profile's password manager off, which also
+// stops Chrome's password-leak lookups to Google: those would send a hash of
+// the test credentials and clutter history. Flags can't do this in current builds.
+func DisablePasswordManager(profile string) error {
+	prefs := filepath.Join(profile, "Default", "Preferences")
+	if err := os.MkdirAll(filepath.Dir(prefs), 0o700); err != nil {
+		return err
+	}
+	root := map[string]any{}
+	if b, err := os.ReadFile(prefs); err == nil {
+		_ = json.Unmarshal(b, &root) // unreadable: start over with just ours
+	}
+	root["credentials_enable_service"] = false
+	prof, _ := root["profile"].(map[string]any)
+	if prof == nil {
+		prof = map[string]any{}
+	}
+	prof["password_manager_enabled"] = false
+	prof["password_manager_leak_detection"] = false
+	root["profile"] = prof
+	b, err := json.Marshal(root)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(prefs, b, 0o600)
 }

@@ -33,7 +33,7 @@ type Client struct {
 	APIKey  string
 	Proxy   string // ZAP's proxy listener; usually the same host:port as the API
 	HTTP    *http.Client
-	browser *browser.Launcher
+	browsers *browser.Launchers
 }
 
 var _ proxy.Proxy = (*Client)(nil)
@@ -47,7 +47,7 @@ func New(baseURL, apiKey, listener string) *Client {
 	}
 	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), APIKey: apiKey, Proxy: listener,
 		HTTP:    &http.Client{Transport: &http.Transport{Proxy: nil}},
-		browser: &browser.Launcher{Name: "zap", Proxy: listener}}
+		browsers: &browser.Launchers{Prefix: "zap", Proxy: listener}}
 }
 
 func unsupported(what string) error { return fmt.Errorf("ZAP: %s: %w", what, proxy.ErrUnsupported) }
@@ -103,15 +103,29 @@ func (c *Client) BrowserLaunch(ctx context.Context, o proxy.BrowserOptions) (*pr
 	if !o.KeepIntercept {
 		_, _ = c.SetIntercept(ctx, false)
 	}
-	return c.browser.Launch(ctx, o)
+	return c.browsers.Launch(ctx, o)
 }
 
-func (c *Client) BrowserStatus(ctx context.Context) (*proxy.BrowserStatus, error) {
-	return c.browser.Status(ctx)
+func (c *Client) BrowserStatus(ctx context.Context, name string) (*proxy.BrowserStatus, error) {
+	return c.browsers.Status(ctx, name)
 }
 
-func (c *Client) BrowserStop(ctx context.Context) (*proxy.BrowserStatus, error) {
-	return c.browser.Stop(ctx)
+func (c *Client) BrowserStop(ctx context.Context, name string) (*proxy.BrowserStatus, error) {
+	return c.browsers.Stop(ctx, name)
+}
+
+func (c *Client) Browsers(ctx context.Context) ([]proxy.BrowserStatus, error) { return c.browsers.All(ctx) }
+
+func (c *Client) Listeners(context.Context) ([]proxy.Listener, error) {
+	return nil, unsupported("per-account listeners")
+}
+
+func (c *Client) AddListeners(context.Context, []int) ([]proxy.Listener, error) {
+	return nil, unsupported("per-account listeners")
+}
+
+func (c *Client) RemoveListeners(context.Context, []int) ([]proxy.Listener, error) {
+	return nil, unsupported("per-account listeners")
 }
 
 func (c *Client) Intercept(ctx context.Context) (bool, error) {

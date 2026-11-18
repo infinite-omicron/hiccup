@@ -47,7 +47,7 @@ public class Extension implements BurpExtension {
 
         api.extension().registerUnloadingHandler(() -> {
             server.stop();
-            browser.stop();
+            browser.stopAll();
             try {
                 Files.deleteIfExists(runtime);
             } catch (IOException ignored) {

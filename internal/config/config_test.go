@@ -99,3 +99,22 @@ func write(t *testing.T, path, s string) {
 		t.Fatal(err)
 	}
 }
+
+func TestAccountPorts(t *testing.T) {
+	s := &Site{Roles: map[string]*Role{
+		"admin": {Level: 100, Accounts: []*Account{{Name: "admin1"}}},
+		"user":  {Level: 10, Accounts: []*Account{{Name: "user2"}, {Name: "user1", ProxyPort: 8182}}},
+		"anon":  {Level: 0, Accounts: []*Account{{Name: "anon"}}},
+	}}
+	got := s.AccountPorts()
+	want := map[string]int{"admin1": 8181, "user1": 8182, "user2": 8183, "anon": 8184}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s: %d, want %d (all: %v)", k, got[k], v, got)
+		}
+	}
+	s.ListenerBase = 9000
+	if p := s.AccountPorts()["admin1"]; p != 9000 {
+		t.Errorf("listener_base not used: %d", p)
+	}
+}

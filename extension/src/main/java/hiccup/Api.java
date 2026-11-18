@@ -45,6 +45,7 @@ public class Api {
     private final byte[] auth;
     private final Browser browser;
     private final Throttle throttle;
+    private final Listeners listeners;
     private MiniHttpServer server;
     private int port;
 
@@ -63,6 +64,7 @@ public class Api {
         this.auth = ("Bearer " + token).getBytes(StandardCharsets.UTF_8);
         this.browser = browser;
         this.throttle = throttle;
+        this.listeners = new Listeners(api);
     }
 
     public void start(int port) throws IOException {
@@ -117,11 +119,23 @@ public class Api {
         }
         return switch (key) {
             case "GET /health" -> health();
-            case "GET /browser" -> browser.status();
+            case "GET /browser" -> browser.status(q.get("name"));
+            case "GET /browsers" -> browser.statusAll();
             case "POST /browser/launch" -> launch(obj(body));
             case "POST /browser/stop" -> {
-                browser.stop();
-                yield browser.status();
+                JsonObject o = obj(body);
+                if (o.has("all") && o.get("all").getAsBoolean()) {
+                    browser.stopAll();
+                    yield browser.statusAll();
+                }
+                browser.stop(str(o, "name"));
+                yield browser.status(str(o, "name"));
+            }
+            case "GET /proxy/listeners" -> listeners.list();
+            case "POST /proxy/listeners" -> listeners.add(ints(obj(body).getAsJsonArray("ports")));
+            case "DELETE /proxy/listeners" -> {
+                JsonObject o = obj(body);
+                yield listeners.remove(o.has("ports") ? ints(o.getAsJsonArray("ports")) : List.of());
             }
             case "GET /proxy/history" -> history(q);
             case "GET /proxy/intercept" -> Map.of("enabled", api.proxy().isInterceptEnabled());
@@ -207,7 +221,8 @@ public class Api {
         if (!(o.has("keep_intercept") && o.get("keep_intercept").getAsBoolean())) api.proxy().disableIntercept();
         int cdp = o.has("port") ? o.get("port").getAsInt() : 9222;
         boolean headless = o.has("headless") && o.get("headless").getAsBoolean();
-        return browser.launch(str(o, "url"), cdp, str(o, "ua"), headless, str(o, "binary"));
+        int proxyPort = o.has("proxy_port") ? o.get("proxy_port").getAsInt() : 0;
+        return browser.launch(str(o, "name"), str(o, "url"), cdp, proxyPort, str(o, "ua"), headless, str(o, "binary"));
     }
 
     private Object history(Map<String, String> q) {
@@ -215,10 +230,12 @@ public class Api {
         int since = Integer.parseInt(q.getOrDefault("since", "-1"));
         int limit = Integer.parseInt(q.getOrDefault("limit", "100"));
         boolean inScope = "true".equals(q.get("in_scope"));
+        int listener = Integer.parseInt(q.getOrDefault("listener", "0"));
         List<ProxyHttpRequestResponse> all = api.proxy().history(item ->
                 item.id() > since
                         && (contains == null || item.finalRequest().url().contains(contains))
-                        && (!inScope || item.finalRequest().isInScope()));
+                        && (!inScope || item.finalRequest().isInScope())
+                        && (listener == 0 || item.listenerPort() == listener));
         List<ProxyHttpRequestResponse> page = all.subList(Math.max(0, all.size() - limit), all.size());
         List<Map<String, Object>> out = new ArrayList<>(page.size());
         for (ProxyHttpRequestResponse item : page) {
@@ -231,6 +248,7 @@ public class Api {
             m.put("status", resp == null ? null : resp.statusCode());
             m.put("length", resp == null ? null : resp.toByteArray().length());
             m.put("mime", resp == null ? null : resp.statedMimeType().name());
+            m.put("listener_port", item.listenerPort());
             out.add(m);
         }
         return out;
@@ -242,6 +260,7 @@ public class Api {
         ProxyHttpRequestResponse item = found.get(0);
         Map<String, Object> m = rr(item.finalRequest(), item.originalResponse());
         m.put("id", item.id());
+        m.put("listener_port", item.listenerPort());
         m.put("time", item.time().toString());
         return m;
     }
@@ -578,6 +597,13 @@ public class Api {
     private static String[] paths(Map<String, String> q) {
         String p = q.get("paths");
         return p == null || p.isBlank() ? new String[0] : p.split(",");
+    }
+
+    private static List<Integer> ints(JsonArray a) {
+        if (a == null) throw new HttpError(400, "missing \"ports\"");
+        List<Integer> out = new ArrayList<>();
+        for (JsonElement e : a) out.add(e.getAsInt());
+        return out;
     }
 
     private static List<String> strings(JsonArray a) {

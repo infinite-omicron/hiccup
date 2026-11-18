@@ -6,6 +6,7 @@ package mitm
 import (
 	"context"
 	_ "embed"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -32,24 +33,38 @@ func RuntimePath() string { return filepath.Join(config.Home(), "mitm.json") }
 
 type Client struct {
 	*burp.Client
-	browser *browser.Launcher
+	browsers *browser.Launchers
 }
 
 var _ proxy.Proxy = (*Client)(nil)
 
 // New connects to the addon's API; listener is mitmproxy's proxy address.
 func New(url, token, listener string) *Client {
-	return &Client{Client: burp.New(url, token), browser: &browser.Launcher{Name: "mitm", Proxy: listener}}
+	return &Client{Client: burp.New(url, token), browsers: &browser.Launchers{Prefix: "mitm", Proxy: listener}}
 }
 
 func (c *Client) BrowserLaunch(ctx context.Context, o proxy.BrowserOptions) (*proxy.BrowserStatus, error) {
-	return c.browser.Launch(ctx, o)
+	return c.browsers.Launch(ctx, o)
 }
 
-func (c *Client) BrowserStatus(ctx context.Context) (*proxy.BrowserStatus, error) {
-	return c.browser.Status(ctx)
+func (c *Client) BrowserStatus(ctx context.Context, name string) (*proxy.BrowserStatus, error) {
+	return c.browsers.Status(ctx, name)
 }
 
-func (c *Client) BrowserStop(ctx context.Context) (*proxy.BrowserStatus, error) {
-	return c.browser.Stop(ctx)
+func (c *Client) BrowserStop(ctx context.Context, name string) (*proxy.BrowserStatus, error) {
+	return c.browsers.Stop(ctx, name)
+}
+
+func (c *Client) Browsers(ctx context.Context) ([]proxy.BrowserStatus, error) { return c.browsers.All(ctx) }
+
+func (c *Client) Listeners(context.Context) ([]proxy.Listener, error) {
+	return nil, fmt.Errorf("mitmproxy: per-account listeners: %w", proxy.ErrUnsupported)
+}
+
+func (c *Client) AddListeners(context.Context, []int) ([]proxy.Listener, error) {
+	return nil, fmt.Errorf("mitmproxy: per-account listeners: %w", proxy.ErrUnsupported)
+}
+
+func (c *Client) RemoveListeners(context.Context, []int) ([]proxy.Listener, error) {
+	return nil, fmt.Errorf("mitmproxy: per-account listeners: %w", proxy.ErrUnsupported)
 }
