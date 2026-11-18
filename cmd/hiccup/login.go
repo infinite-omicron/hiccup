@@ -255,7 +255,25 @@ func (a *app) manualLogin(cmd *cobra.Command, s *config.Site, acct *config.Accou
 	}
 	fmt.Fprintf(os.Stderr, "hiccup: log in as %s (%s) in Burp's browser", acct.Name, acct.Username)
 	entered := make(chan struct{})
-	if term.IsTerminal(int(os.Stdin.Fd())) {
+	interactive := term.IsTerminal(int(os.Stdin.Fd()))
+	if interactive && urlContains == "" && selector == "" {
+		// Without a success check, any navigation would count as logged in
+		// (an SSO redirect, an MFA page), so only the user can say when.
+		fmt.Fprintln(os.Stderr, ", then press Enter")
+		done := make(chan struct{})
+		go func() {
+			_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
+			close(done)
+		}()
+		select {
+		case <-done:
+			return tab, nil
+		case <-ctx.Done():
+			tab.Close()
+			return nil, fmt.Errorf("manual login: %w", ctx.Err())
+		}
+	}
+	if interactive {
 		fmt.Fprint(os.Stderr, ", then press Enter")
 		go func() {
 			_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
