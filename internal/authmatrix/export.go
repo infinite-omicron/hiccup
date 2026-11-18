@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/xuri/excelize/v2"
@@ -205,7 +206,11 @@ func (m *Matrix) WriteXLSX(path string, o XLSXOptions) error {
 	if idx, err := f.GetSheetIndex(sh); err == nil {
 		f.SetActiveSheet(idx)
 	}
-	return f.SaveAs(path)
+	if err := f.SaveAs(path); err != nil {
+		return err
+	}
+	// The workbook holds findings; excelize creates it executable and world-readable.
+	return os.Chmod(path, 0o600)
 }
 
 // Issues turns findings into Burp issues, with the owner's and the other
