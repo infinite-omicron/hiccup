@@ -83,14 +83,14 @@ Content -> Documents -> Shared        (a tab on the Documents page, found at --d
   - A reference to someone's object (`/documents/${document_id}`) is allowed only for accounts at a higher level.
   - Any other request is allowed for accounts at the recorder's level or above, or for any account at or above the level of someone who recorded it themselves.
   - Override any of these in `~/.hiccup/sites/<site>/expectations.json`, e.g. `{"Reports": {"user": "allow"}, "*": {"auditor": "deny"}}`.
-- **Findings:** the classification is a heuristic, so workbooks and Burp issues word findings as *potential* issues to confirm by hand. JSON, CSV and `matrix run` use the short codes.
+- **Findings:** the classification is a heuristic, so escalations are worded as *potential* issues to confirm by hand. In workbooks the label follows the result, e.g. `GET /api/export -> 200 allowed (Forceful Browsing)`; Burp issues use the label as their name. JSON, CSV and `matrix run` use the short codes.
 
-  | Code | Wording | When |
+  | Code | Label | When |
   |---|---|---|
-  | `vertical` | Potential vertical privilege escalation | a lower level got access |
-  | `horizontal` | Potential horizontal privilege escalation (IDOR) | the same level reached another account's object |
-  | `forceful-browsing` | Potential unauthenticated access (forceful browsing) | the anonymous account got access |
-  | `review` | Needs review | a 2xx that doesn't look like the owner's response |
+  | `vertical` | Potential Vertical Privilege Escalation | a lower level got access |
+  | `horizontal` | Potential Horizontal Privilege Escalation | the same level reached another account's object (IDOR) |
+  | `forceful-browsing` | Forceful Browsing | the anonymous account got access |
+  | `review` | Needs Review | a 2xx that doesn't look like the owner's response |
 
 If an owner is denied its own recorded requests, `matrix run` warns that its session has probably expired.
 

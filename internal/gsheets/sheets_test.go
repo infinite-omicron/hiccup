@@ -73,7 +73,7 @@ func TestWrite(t *testing.T) {
 		t.Errorf("calls: %v", calls)
 	}
 	if values.Values[0][1] != "Action:" || values.Values[0][2] != "Users" || values.Values[1][3] != "Actual" ||
-		values.Values[2][0] != "Account" || values.Values[4][0] != "user1" || !strings.Contains(values.Values[4][3], "Potential vertical privilege escalation") {
+		values.Values[2][0] != "Account" || values.Values[4][0] != "user1" || !strings.Contains(values.Values[4][3], "200 allowed (Potential Vertical Privilege Escalation)") {
 		t.Errorf("values: %v", values.Values)
 	}
 	for _, row := range values.Values {

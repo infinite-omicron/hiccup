@@ -249,7 +249,7 @@ func TestRunAndExport(t *testing.T) {
 			t.Errorf("%s = %q, want %q", c, got, want)
 		}
 	}
-	if d5 := cell("D5"); !strings.Contains(d5, "GET /admin/users -> Potential vertical privilege escalation - 200 allowed") || !strings.HasPrefix(cell("C5"), "deny: GET /admin/users") {
+	if d5 := cell("D5"); !strings.Contains(d5, "GET /admin/users -> 200 allowed (Potential Vertical Privilege Escalation)") || !strings.HasPrefix(cell("C5"), "deny: GET /admin/users") {
 		t.Errorf("user1 x Users: C5=%q D5=%q", cell("C5"), d5)
 	}
 	// Rows are green when Exp? and Actual agree, yellow when they don't.
