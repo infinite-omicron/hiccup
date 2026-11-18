@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/storage"
 	"github.com/chromedp/chromedp"
 )
 
@@ -26,18 +28,25 @@ type LoginRecipe struct {
 
 // Login runs a recipe in this tab.
 func (s *Session) Login(r LoginRecipe, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(s.Ctx, timeout)
+	deadline := time.Now().Add(timeout)
+	ctx, cancel := context.WithDeadline(s.Ctx, deadline)
 	defer cancel()
 	if err := chromedp.Do(ctx,
 		chromedp.Navigate(r.URL),
 		chromedp.WaitVisible(chromedp.CSS(r.UsernameSel)),
 		chromedp.SendKeys(chromedp.CSS(r.UsernameSel), r.Username),
 		chromedp.SendKeys(chromedp.CSS(r.PasswordSel), r.Password),
-		chromedp.Click(chromedp.CSS(r.SubmitSel)),
 	); err != nil {
 		return fmt.Errorf("login form: %w", err)
 	}
-	if err := s.WaitLoggedIn(ctx, r.SuccessURL, r.SuccessSelector); err != nil {
+	// The click submits the form; the browser may detach the page while it
+	// navigates, which WaitLoggedIn recovers from.
+	if err := chromedp.Do(ctx, chromedp.Click(chromedp.CSS(r.SubmitSel))); err != nil && !errors.Is(err, chromedp.ErrTargetDetached) {
+		return fmt.Errorf("login form: %w", err)
+	}
+	waitCtx, cancelWait := context.WithDeadline(context.Background(), deadline)
+	defer cancelWait()
+	if err := s.WaitLoggedIn(waitCtx, r.SuccessURL, r.SuccessSelector); err != nil {
 		return fmt.Errorf("login did not succeed: %w", err)
 	}
 	return nil
@@ -45,12 +54,33 @@ func (s *Session) Login(r LoginRecipe, timeout time.Duration) error {
 
 // WaitLoggedIn polls until the URL contains urlContains (when set) and
 // selector exists (when set). With neither set, it waits for the URL to leave
-// the page it was on.
+// the page it was on. ctx bounds the wait. If the browser detaches the page
+// (a navigation can swap its target), it re-attaches to the page in the same
+// browser context and keeps waiting.
 func (s *Session) WaitLoggedIn(ctx context.Context, urlContains, selector string) error {
-	start, _ := chromedp.Run(s.Ctx, chromedp.Location())
+	const pollTimeout = 5 * time.Second
+	run := func(a chromedp.Action[string]) (string, error) {
+		c, cancel := context.WithTimeout(s.Ctx, pollTimeout)
+		defer cancel()
+		return chromedp.Run(c, a)
+	}
+	start, _ := run(chromedp.Location())
+	reattached := 0
 	for {
-		loc, err := chromedp.Run(ctx, chromedp.Location())
-		if err != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		loc, err := run(chromedp.Location())
+		switch {
+		case errors.Is(err, chromedp.ErrTargetDetached) && reattached < 3:
+			reattached++
+			if rerr := s.reattach(); rerr != nil {
+				return fmt.Errorf("%w; re-attaching failed: %v", err, rerr)
+			}
+			continue
+		case errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil:
+			continue // the page is mid-navigation; ask again
+		case err != nil:
 			return err
 		}
 		ok := true
@@ -60,7 +90,9 @@ func (s *Session) WaitLoggedIn(ctx context.Context, urlContains, selector string
 			ok = loc != start
 		}
 		if ok && selector != "" {
-			n, err := chromedp.Run(ctx, chromedp.Evaluate[bool](fmt.Sprintf("document.querySelector(%q) !== null", selector)))
+			c, cancel := context.WithTimeout(s.Ctx, pollTimeout)
+			n, err := chromedp.Run(c, chromedp.Evaluate[bool](fmt.Sprintf("document.querySelector(%q) !== null", selector)))
+			cancel()
 			ok = err == nil && n
 		}
 		if ok {
@@ -74,13 +106,31 @@ func (s *Session) WaitLoggedIn(ctx context.Context, urlContains, selector string
 	}
 }
 
-// Cookies returns the cookies the browser would send to urls.
+// Cookies returns the cookies in this session's browser context that would
+// be sent to any of urls. It reads them at browser level, so it works even
+// if the page was swapped or closed after logging in.
 func (s *Session) Cookies(urls ...string) ([]*network.Cookie, error) {
-	res, err := chromedp.Call(s.Ctx, network.GetCookies, network.GetCookiesParams{URLs: urls})
+	res, err := chromedp.CallBrowser(s.Ctx, storage.GetCookies, storage.GetCookiesParams{BrowserContextID: s.contextID})
 	if err != nil {
 		return nil, err
 	}
-	return res.Cookies, nil
+	var hosts []string
+	for _, u := range urls {
+		if pu, err := url.Parse(u); err == nil && pu.Hostname() != "" {
+			hosts = append(hosts, strings.ToLower(pu.Hostname()))
+		}
+	}
+	var out []*network.Cookie
+	for _, c := range res.Cookies {
+		domain := strings.ToLower(strings.TrimPrefix(c.Domain, "."))
+		for _, h := range hosts {
+			if h == domain || strings.HasSuffix(h, "."+domain) {
+				out = append(out, c)
+				break
+			}
+		}
+	}
+	return out, nil
 }
 
 // Link is a navigation link found on a page. Path is its place in the menu,
