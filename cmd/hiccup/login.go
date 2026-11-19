@@ -165,7 +165,9 @@ func (a *app) login(cmd *cobra.Command, b proxy.Proxy, site string, s *config.Si
 	}
 
 	var tab *browser.Session
-	if !manual && s.Login != nil {
+	// A login with only a URL (SSO, magic links) has no form to fill: go
+	// straight to manual login instead of waiting for the recipe to time out.
+	if !manual && s.Login != nil && s.Login.Username != "" {
 		tab, err = a.attachTo(cmd, o.browser, browser.AttachOptions{Isolated: !o.visible && o.browser == ""})
 		if err != nil {
 			return nil, err
