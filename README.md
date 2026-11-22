@@ -40,6 +40,7 @@ hiccup matrix export                            # opens the auth matrix in Excel
 | [Browser automation](docs/browser.md) | CDP, Playwright and Selenium, the relay |
 | [Throttling and User-Agent](docs/throttling.md) | rate limits, back-off, consistent client hints |
 | [Auth matrix](docs/auth-matrix.md) | logins, sessions, horizontal and vertical privilege escalation, Excel, Microsoft 365 and Google Sheets exports |
+| [PlexTrac](docs/plextrac.md) | syncing your company's write-ups and matching them to findings |
 | [Nuclei](docs/nuclei.md) | running Nuclei through the proxy, importing findings |
 | [Proxies](docs/proxies.md) | ZAP and mitmproxy, and what maps to what |
 | [Ports](docs/ports.md) | every port hiccup uses and how to change it |
