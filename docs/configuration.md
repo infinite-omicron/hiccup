@@ -69,6 +69,10 @@ hiccup m365 logout
 
 `tenant` defaults to `organizations` (any work or school account). The token is stored in `~/.hiccup/microsoft/token.json` (0600) and refreshed automatically.
 
+## PlexTrac
+
+`"plextrac": {"url", "username", "password", "repositories", "map"}` configures where hiccup pulls company write-ups from. `map` names a separate mapping file in `~/.hiccup/plextrac/`. See [plextrac.md](plextrac.md).
+
 ## Credentials
 
 A password can be:
@@ -100,6 +104,7 @@ The ZAP API key in `zap.api_key` accepts the same forms.
 | `HICCUP_USER_AGENT`, `HICCUP_THROTTLE_RPS` | per-run overrides; never written to config |
 | `HICCUP_GOOGLE_CREDENTIALS` | Google credentials JSON (default `$HICCUP_HOME/google/credentials.json`) |
 | `HICCUP_M365_CLIENT_ID`, `HICCUP_M365_TENANT` | the Entra ID app registration for Microsoft 365 sync |
+| `HICCUP_PLEXTRAC_URL`, `HICCUP_PLEXTRAC_USERNAME`, `HICCUP_PLEXTRAC_PASSWORD`, `HICCUP_PLEXTRAC_MAP` | PlexTrac instance, account, password and mapping file |
 
 ## What lives in `~/.hiccup`
 
@@ -112,5 +117,6 @@ The ZAP API key in `zap.api_key` accepts the same forms.
 | `bapps/` | downloaded BApps; `jython/` and `jruby/` runtimes |
 | `google/` | Google credentials and token (0600) |
 | `microsoft/` | Microsoft 365 token (0600) |
+| `plextrac/` | PlexTrac session, synced write-ups and your mapping file (0600) |
 | `browser-profile*` | the automated browser's profiles |
 | `*.log` | Burp, mitmproxy and browser logs from the last start |

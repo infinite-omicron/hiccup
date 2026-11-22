@@ -80,6 +80,7 @@ func main() {
 		a.mitmCmd(),
 		a.googleCmd(),
 		a.m365Cmd(),
+		a.plextracCmd(),
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)

@@ -21,8 +21,39 @@ type Config struct {
 	Mitm   *Mitm   `json:"mitm,omitempty"`
 	Matrix *Matrix `json:"matrix,omitempty"`
 	// Microsoft is the Entra app registration used to sync to OneDrive/SharePoint.
-	Microsoft *Microsoft       `json:"microsoft,omitempty"`
-	Sites     map[string]*Site `json:"sites,omitempty"`
+	Microsoft *Microsoft `json:"microsoft,omitempty"`
+	// PlexTrac is the instance hiccup pulls company write-ups from.
+	PlexTrac *PlexTrac        `json:"plextrac,omitempty"`
+	Sites    map[string]*Site `json:"sites,omitempty"`
+}
+
+// PlexTrac locates a PlexTrac instance and the account hiccup signs in with.
+type PlexTrac struct {
+	URL      string `json:"url,omitempty"`      // e.g. https://acme.plextrac.com
+	Username string `json:"username,omitempty"` // the account's email
+	Password string `json:"password,omitempty"` // plaintext, env:VAR or keychain:service/account; empty prompts
+	// Repositories limits syncing to these WriteupsDB repositories (names or IDs); empty syncs all.
+	Repositories []string `json:"repositories,omitempty"`
+	// Map is the finding -> write-up mapping file, relative to ~/.hiccup/plextrac/.
+	Map string `json:"map,omitempty"`
+}
+
+// PlexTracSettings returns the PlexTrac settings with HICCUP_PLEXTRAC_URL,
+// HICCUP_PLEXTRAC_USERNAME, HICCUP_PLEXTRAC_PASSWORD and HICCUP_PLEXTRAC_MAP applied.
+func (c *Config) PlexTracSettings() PlexTrac {
+	var p PlexTrac
+	if c.PlexTrac != nil {
+		p = *c.PlexTrac
+	}
+	for env, dst := range map[string]*string{
+		"HICCUP_PLEXTRAC_URL": &p.URL, "HICCUP_PLEXTRAC_USERNAME": &p.Username,
+		"HICCUP_PLEXTRAC_PASSWORD": &p.Password, "HICCUP_PLEXTRAC_MAP": &p.Map,
+	} {
+		if v := os.Getenv(env); v != "" {
+			*dst = v
+		}
+	}
+	return p
 }
 
 // Microsoft identifies the Entra ID (Azure AD) app registration for Microsoft 365.
