@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0](https://github.com/infinite-omicron/hiccup/compare/v0.2.0...v0.3.0) (2026-11-22)
+
+
+### Features
+
+* **plextrac:** sync company write-ups and match them to findings ([6abfa08](https://github.com/infinite-omicron/hiccup/commit/6abfa08564380fef2b3830cf14186708ae026db8))
+
+
+### Bug Fixes
+
+* **login:** skip the login recipe when the site has no form selectors ([872a102](https://github.com/infinite-omicron/hiccup/commit/872a10235558b8c35ad67f5f5104619fbcdecdd2))
+* **login:** wait for enter in manual login when the site has no success check ([9669473](https://github.com/infinite-omicron/hiccup/commit/9669473fde53a1f11442897ce53d41fca61f6c45))
+
 ## [0.2.0](https://github.com/infinite-omicron/hiccup/compare/v0.1.0...v0.2.0) (2026-11-18)
 
 
